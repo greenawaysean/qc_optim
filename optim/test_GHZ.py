@@ -6,39 +6,79 @@ Created on Mon Jan 20 10:24:40 2020
 @author: form Kiran
 """
 
-from qiskit import QuantumCircuit, ClassicalRegister, execute, Aer, transpile
-from qiskit.providers.aer.noise import NoiseModel
+
+
+
+# from qiskit import QuantumCircuit, ClassicalRegister, execute, Aer, IBMQ, transpile, QuantumRegister
+import qiskit as qk
 import numpy as np
+import time
 
 
-simulator = Aer.get_backend('qasm_simulator')
+try:
+    provider_free
+except:
+    provider_free = qk.IBMQ.load_account()
+    provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
+    provider_list = {'free':provider_free, 'imperial':provider_imperial}
+    simulator = qk.Aer.get_backend('qasm_simulator')
+  
+    
+
+
+
 MEAS_DEFAULT = ['xxx', '1zz', 'z1z', 'zz1', 'yyx', 'xyy', 'yxy']
+#MEAS_DEFAULT = ['zzz']
 MEAS_WEIGHTS = np.array([1., 1., 1., 1., -1., -1., -1.])/4.0
-NB_SHOTS_DEFAULT = 128
+NB_SHOTS_DEFAULT = 256
+OPTIMIZATION_LEVEL_DEFAULT = 3
+LIST_OF_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore', 'ibmq_rochester']
+META_DATA = []
+VARIABLE_PARAMS = [qk.circuit.Parameter('R1'),
+                    qk.circuit.Parameter('R2'),
+                    qk.circuit.Parameter('R3'),
+                    qk.circuit.Parameter('R4'),
+                    qk.circuit.Parameter('R5'),
+                    qk.circuit.Parameter('R6')]
+
+
 pi = np.pi
-x_opt = np.array([3., 3., 2., 3., 3., 1.]) * np.pi/2
-x_loc = np.array([1., 0., 4., 0., 3., 0.]) * np.pi/2
 
 
 
-def create_circ(params = np.zeros(6)):
-    c = QuantumCircuit(3)
+# Choosing this a the defaul simulator
+actual_backend = simulator
+instance = qk.aqua.QuantumInstance(actual_backend, 
+                                   shots=NB_SHOTS_DEFAULT, 
+                                   optimization_level=OPTIMIZATION_LEVEL_DEFAULT)
+
+
+
+
+
+
+
+def create_circ(params = VARIABLE_PARAMS):
+    c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(1, 'b'), qk.QuantumRegister(1,'c'))
     c.rx(params[0], 0)
     c.rx(params[1], 1)
     c.ry(params[2], 2)
+    c.barrier()
     c.cnot(0,2) 
     c.cnot(1,2) 
+    c.barrier()
     c.rx(params[3], 0)
     c.rx(params[4], 1)
     c.ry(params[5], 2)
+    c.barrier()
     return c
-   
+
 
 def append_measurements(circ, measurements):
     """ Assumes creator returns an instance of the relevant circuit"""
     num_classical = len(measurements.replace('1',''))
     if num_classical > 0:
-        cr = ClassicalRegister(num_classical, 'c')
+        cr = qk.ClassicalRegister(num_classical, 'classical')
         circ.add_register(cr)
     ct_m = 0
     ct_q = 0
@@ -60,11 +100,45 @@ def append_measurements(circ, measurements):
     return circ
 
 
-def gen_meas_circuits(creator, meas_settings, params):
+def gen_meas_circuits(creator = create_circ, 
+                      meas_settings = MEAS_DEFAULT, 
+                      params = VARIABLE_PARAMS):
     """ Return a list of measurable circuit with same parameters but with 
     different measurement settings"""
     c_list = [append_measurements(creator(params), m)for m in meas_settings]
     return c_list
+
+
+
+
+def update_params(circ, val_dict=np.zeros(6)):
+    '''Returns list of circuit with bound values DOES NOT MODIFY INPUT'''
+    if type(circ) != list: 
+        print('WARNING ONLY USE LIST INPUT HERE')
+        return 'ONLY USE LIST INPUT FOR UPDATE PARAMS!!!'
+    val_dict = {key:val for key,val in zip(VARIABLE_PARAMS,val_dict)}
+    bound_circ = []
+    for cc in circ:
+        bound_circ.append(cc.bind_parameters(val_dict))
+    return bound_circ  
+
+# %%
+MAIN_CIRC = instance.transpile(gen_meas_circuits())
+
+def UpdateQuantumCircuit(creator = create_circ, 
+                         meas_settings = MEAS_DEFAULT, 
+                         params = VARIABLE_PARAMS):
+    global MAIN_CIRC
+    print('Warning this function may reset which qubits are used')
+    MAIN_CIRC = instance.transpile(gen_meas_circuits(creator = create_circ, 
+                                  meas_settings = MEAS_DEFAULT, 
+                                  params = VARIABLE_PARAMS)
+                                   )
+
+
+
+
+# %% 
 
 def freq_even(results):
     """ Frequency of +1 eigen values: result 0(1) corresponds to a -1(+1) eigen 
@@ -76,54 +150,113 @@ def freq_even(results):
         nb_odd += v * (k.count('0')%2)
     return nb_even / (nb_odd + nb_even)
 
-def F(experimental_params, flags = False, shots = NB_SHOTS_DEFAULT, 
-      meas_settings = MEAS_DEFAULT, meas_weights = MEAS_WEIGHTS, 
-      noise_model = NoiseModel()):
+
+
+def F(experimental_params, 
+      flags = False, 
+      meas_weights=MEAS_WEIGHTS, 
+      shots = NB_SHOTS_DEFAULT,
+      noise_model = None):
     """ Main function: take parameters and return an estimation of the fidelity 
     Different possible behaviors:
         +
-        + if shots is an integer assign the same number of shots to each meas setting
-                      a list assign each entry to a measurement setting
-        + if meas_weights is none, returns the frequency associated to each 
-          meas_settings, else returns a dot product of weights.frequencies 
+        + Shots is now handeled in the ``instance'' object, this ensueres every circuit is identical
+        + Handeling of all circuit params is now passed to UpdateQuantumCircuit 
+            + making use of 'quantum_instance' 
+            + Handels circuits are on the same qubits and communication errors
 
     """
-    if type(meas_settings) is not list: meas_settings = [meas_settings]
-    if type(shots) == int: shots = [shots] * len(meas_settings)
-    circs = gen_meas_circuits(create_circ, meas_settings, experimental_params)
-    qjobs = [transpile(c, optimization_level=2) for c in circs]
+    # if type(meas_settings) is not list: meas_settings = [meas_settings]
+    # if type(shots) == int: shots = [shots] * len(meas_settings) number of shots is not defined in the ``instance''
+    circs = update_params(MAIN_CIRC, experimental_params)
+    
 
-    submitted = []
-    for jj, ss in zip(qjobs, shots):
-        submitted.append(execute(jj, simulator, shots = ss, noise_model = noise_model))
-        if flags:
-            print('submitted')
-
-    current_status = str([str(jj.status()) for jj in submitted])
-    if flags: print(current_status)
-    ###### Uncomment following section to run on IBMQ
-    #while 'RUN' in current_status or 'QUE' in current_status: # can optimise to only look at one at a time
-    #    print(current_status)
-    #    time.sleep(10)
-    #    current_status = str([str(jj.status()) for jj in submitted])
-
-    measurement_results = []
-    for j in submitted:
-        if flags: print(j.result().get_counts())
-        measurement_results.append(freq_even(j.result().get_counts()))
-
-    #print(measurement_results)
+################
+    # update here to include the noise model
+    results = instance.execute(circs, had_transpiled=True)
+################
+    
+    counts = [results.get_counts(ii) for ii in range(len(circs))]
+    
+    measurement_results = [freq_even(ct) for ct in counts]
+    
+    META_DATA.append(results.to_dict()) #keep data
+    
     if meas_weights is None:
         res = measurement_results
     else:
         res = np.dot(measurement_results, meas_weights)
-    #print('Fidelity = {}'.format(str(Fidelity)))
-    return np.squeeze(res)
+    return np.squeeze(res) #, meta_results
 
 
-if __name__ == '__main__':    
 
+
+
+    
+def ListBackends():
+    '''List all providers by deafult or print your current provider'''
+    #provider_list = {'Imperial':provider_free, 'Free':provider_imperial}
+    for pro in list(provider_list.keys()):
+        print(pro)
+        pro = provider_list[pro]
+        print('\n'.join(str(pro.backends()).split('IBMQBackend')))
+        print('\n') 
+    try:
+        print(actual_backend.status())
+    except:
+        pass
+
+    
+def GetBackend(name, inplace=False):
+    '''Gets back end preferencing the IMPERIAL provider
+    Can pass in a named string or number from CurrentStatus output'''
+    global actual_backend, instance
+    if name == 5: 
+        temp = simulator
+    else:
+        if type(name) == int: name = LIST_OF_DEVICES[name-1]
+        try:
+            temp = provider_imperial.get_backend(name)
+        except:
+            temp = provider_free.get_backend(name)
+    if inplace:
+        actual_backend = temp
+        instance = qk.aqua.QuantumInstance(actual_backend, 
+                                           shots=NB_SHOTS_DEFAULT, 
+                                           optimization_level=OPTIMIZATION_LEVEL_DEFAULT)
+        print('Warning also updated quantum instance to default values')
+    return temp
+        
+
+def CurrentStatus():
+    '''Prints the status of each backend'''
+    ct = 0
+    for device in LIST_OF_DEVICES: # for each device
+        ba = GetBackend(device);ct+=1
+        print(ct, ':   ', ba.status()) # print status
+    ct+=1
+    print(ct, ':   ', simulator.status()) # also print simulator (for completeness)
+    
+# %%
+
+
+def params_to_dict():
+    di = {'shots':NB_SHOTS_DEFAULT,
+     'optimization_level':OPTIMIZATION_LEVEL_DEFAULT,
+     'device':actual_backend.name(),
+     'time_ns':time.time_ns()}
+    return di
+
+def reset_meta_data():
+    '''Hard reset of the META_DATA variable'''
+    global META_DATA
+    del(META_DATA) # should probaby ask for user prompt
+    META_DATA = []
+
+# %%
+if __name__ == '__main__':
+    x_opt = np.array([3., 3., 2., 3., 3., 1.]) * np.pi/2
+    x_loc = np.array([1., 0., 4., 0., 3., 0.]) * np.pi/2
     print(F(x_loc)) #~0.5
     print(F(x_opt)) # 1.0
     
-

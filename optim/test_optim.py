@@ -2,21 +2,38 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Jan 23 12:39:09 2020
-
 @author: fred
 """
 
-import test_GHZ as qcirc
-import sys, dill
-sys.path.insert(0, '/home/fred/Desktop/GPyOpt/') ## Fork from https://github.com/FredericSauv/GPyOpt
+import test_GHZ as qc
+import sys, dill, os
+
+if 'fred' in os.getcwd():
+    sys.path.insert(0, '/home/fred/Desktop/GPyOpt/') 
+elif 'kiran' in os.getcwd():
+    sys.path.insert(0, '/home/kiran/QuantumOptimization/GPyOpt/') ## Fork from https://github.com/FredericSauv/GPyOpt
+
 import GPyOpt
 import numpy as np
 from qiskit.providers.aer.noise import NoiseModel
 from qiskit.providers.aer import noise
 from qiskit.providers.aer.noise.errors import ReadoutError
-from qiskit import IBMQ
+
+
+
 # Global params
-NB_SHOTS = 128
+NB_SHOTS = 128 ## IS REDUNDENT HERE
+
+
+
+
+qc.CurrentStatus()
+chosen_device = int(input('SELECT IBM DEVICE:'))
+qc.GetBackend(chosen_device, inplace=True)
+qc.UpdateQuantumCircuit()
+
+
+
 
 # ===================
 # Noise models
@@ -34,7 +51,8 @@ for n, ro in enumerate(ro_errors_proba_sym):
     noise_rosym.add_readout_error(ReadoutError([[1 - ro[0], ro[0]], [ro[1], 1 - ro[1]]]), [n])
 
 
-provider = IBMQ.load_account()
+
+provider = qc.provider_free
 device = provider.get_backend('ibmq_essex')
 properties = device.properties()
 noise_essex = noise.device.basic_device_noise_model(properties)
@@ -50,7 +68,7 @@ def f_average(params, shots = NB_SHOTS, noise_model = NoiseModel()):
     """  estimate of the fidelity"""
     if np.ndim(params) >1 : res = np.array([f_average(p, shots=shots, noise_model=noise_model) for p in params])
     else: 
-        res = qcirc.F(params, shots = shots, noise_model=noise_model)
+        res = qc.F(params, shots = shots, noise_model=noise_model)
         print(res)
         res = 1 - np.atleast_1d(res)
     return res
@@ -59,9 +77,11 @@ def f_test(params, noise_model = NoiseModel()):
     if np.ndim(params) > 1 :
         res = np.array([f_test(p, noise_model=noise_model) for p in params])
     else:
-        res = qcirc.F(params, shots=10000, noise_model=noise_model)
+        res = qc.F(params, shots=10000, noise_model=noise_model)
         print(res)
     return res
+
+
 
 def get_best_from_bo(bo):
     """ Extract from a bo object the best set of parameters and fom
@@ -80,10 +100,13 @@ def gen_res(bo):
            'gp_params_names':bo.model.model.parameter_names()}
     return res
 
+
+
+
 # ===================
 # BO setup
 # ===================
-NB_INIT = 25
+NB_INIT = 40
 X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
 DOMAIN_DEFAULT = [(0, 2*np.pi) for i in range(6)]
 EPS = np.pi/2
@@ -100,7 +123,7 @@ BO_ARGS_DEFAULT = {'domain': DOMAIN_BO, 'initial_design_numdata':NB_INIT,
 # Ideal case: no noise
 # 20/25 works
 # ===================
-NB_ITER = 25
+NB_ITER = 80
 Bopt = GPyOpt.methods.BayesianOptimization(f_average, **BO_ARGS_DEFAULT)    
 Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 ### Look at results found
@@ -111,56 +134,86 @@ print(Bopt.model.model)
 Bopt.plot_convergence()
 
 
-res_to_dill = gen_res(Bopt)
-with open('_res.pkl', 'wb') as f:
-    dill.dump(res_to_dill, f)
 
-with open('_res.pkl', 'rb') as f:
+# ===================
+# Get a baseline to compare to BO
+# ===================
+
+x_opt_guess =  np.array([3., 3., 2., 3., 3., 1.]) * np.pi/2
+x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
+
+baseline_values = [qc.F(x_opt_guess) for ii in range(10)]
+bopt_values = [qc.F(x_opt_pred) for ii in range(10)]
+
+
+
+
+res_to_dill = gen_res(Bopt)
+dict_to_dill = {'Bopt_results':res_to_dill, 
+                'F_Baseline':baseline_values, 
+                'F_Bopt':bopt_values,
+                'Circ':qc.MAIN_CIRC[0],
+                'Device_config':qc.params_to_dict()}
+
+file_name = '_res_singapore_3.pkl'
+with open(file_name, 'wb') as f:
+    dill.dump(dict_to_dill, f)
+
+
+
+with open(file_name, 'rb') as f:
     data_retrieved = dill.load(f)
 
-# ===================
-# Noise model essex
-# ===================
-NB_ITER = 50
-f_essex = lambda x: f_average(x, shots=NB_SHOTS, noise_model=noise_essex)
-Bopt_essex = GPyOpt.methods.BayesianOptimization(f_essex, **BO_ARGS_DEFAULT)    
-Bopt_essex.run_optimization(max_iter = NB_ITER, eps = 0)
-### Look at results found
-(x_seen_essex, y_seen_essex), (x_exp_essex,y_exp_essex) = Bopt_essex.get_best()
-f_test(x_seen_essex)
-f_test(x_exp_essex)
-print(Bopt_essex.model.model)
-Bopt_essex.plot_convergence()
-
-
-# ===================
-# BO setup with noise in ro
-# case 1 different readout errors for each qubit
-# case 2 same readout errors for each qubit
-# so far as difficult
-# ===================
-### Run optimization // case 1
-f_noisy = lambda x: f_average(x, shots=1000, noise_model=noise_ro)
-Bopt_noisy = GPyOpt.methods.BayesianOptimization(f_noisy, **BO_ARGS_DEFAULT)    
-Bopt_noisy.run_optimization(max_iter = NB_ITER, eps = 0)
-# Look at results found
-(x_seen_noisy, y_seen_noisy), (x_exp_noisy,y_exp_noisy) = Bopt_noisy.get_best()
-print(f_test(x_seen_noisy))
-print(f_test(x_exp_noisy))
-Bopt_noisy.plot_convergence()
 
 
 
+# # ===================
+# # Noise model essex
+# # ===================
+# NB_ITER = 50
+# f_essex = lambda x: f_average(x, shots=NB_SHOTS, noise_model=noise_essex)
+# Bopt_essex = GPyOpt.methods.BayesianOptimization(f_essex, **BO_ARGS_DEFAULT)    
+# Bopt_essex.run_optimization(max_iter = NB_ITER, eps = 0)
+# ### Look at results found
+# (x_seen_essex, y_seen_essex), (x_exp_essex,y_exp_essex) = Bopt_essex.get_best()
+# f_test(x_seen_essex)
+# f_test(x_exp_essex)
+# print(Bopt_essex.model.model)
+# Bopt_essex.plot_convergence()
 
-### Run optimization // case 2 sy
-f_noisy2 = lambda x: f_average(x, shots=1000, noise_model=noise_rosym)
-Bopt_noisy2 = GPyOpt.methods.BayesianOptimization(f_noisy2, **BO_ARGS_DEFAULT)    
-Bopt_noisy2.run_optimization(max_iter = NB_ITER, eps = 0)
-# Look at results found
-(x_seen_noisy2, y_seen_noisy2), (x_exp_noisy2,y_exp_noisy2) = Bopt_noisy2.get_best()
-print(f_noisy2(x_exp_noisy2))
-print(f_test(x_exp_noisy2))
-Bopt_noisy2.plot_convergence()
+
+# # ===================
+# # BO setup with noise in ro
+# # case 1 different readout errors for each qubit
+# # case 2 same readout errors for each qubit
+# # so far as difficult
+# # ===================
+# ### Run optimization // case 1
+# f_noisy = lambda x: f_average(x, shots=1000, noise_model=noise_ro)
+# Bopt_noisy = GPyOpt.methods.BayesianOptimization(f_noisy, **BO_ARGS_DEFAULT)    
+# Bopt_noisy.run_optimization(max_iter = NB_ITER, eps = 0)
+# # Look at results found
+# (x_seen_noisy, y_seen_noisy), (x_exp_noisy,y_exp_noisy) = Bopt_noisy.get_best()
+# print(f_test(x_seen_noisy))
+# print(f_test(x_exp_noisy))
+# Bopt_noisy.plot_convergence()
+
+
+# ### Run optimization // case 2 sy
+# f_noisy2 = lambda x: f_average(x, shots=1000, noise_model=noise_rosym)
+# Bopt_noisy2 = GPyOpt.methods.BayesianOptimization(f_noisy2, **BO_ARGS_DEFAULT)    
+# Bopt_noisy2.run_optimization(max_iter = NB_ITER, eps = 0)
+# # Look at results found
+# (x_seen_noisy2, y_seen_noisy2), (x_exp_noisy2,y_exp_noisy2) = Bopt_noisy2.get_best()
+# print(f_noisy2(x_exp_noisy2))
+# print(f_test(x_exp_noisy2))
+# Bopt_noisy2.plot_convergence()
+
+
+
+
+
+
 
 
 
