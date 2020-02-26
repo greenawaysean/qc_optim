@@ -6,33 +6,18 @@ Created on Mon Jan 20 10:24:40 2020
 @author: form Kiran
 """
 
-
-
-
-# from qiskit import QuantumCircuit, ClassicalRegister, execute, Aer, IBMQ, transpile, QuantumRegister
 import qiskit as qk
 import numpy as np
-import time
+import os, time
 
-
-try:
-    provider_free
-except:
-    provider_free = qk.IBMQ.load_account()
-    provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
-    provider_list = {'free':provider_free, 'imperial':provider_imperial}
-    simulator = qk.Aer.get_backend('qasm_simulator')
-  
-    
 
 
 
 MEAS_DEFAULT = ['xxx', '1zz', 'z1z', 'zz1', 'yyx', 'xyy', 'yxy']
-#MEAS_DEFAULT = ['zzz']
 MEAS_WEIGHTS = np.array([1., 1., 1., 1., -1., -1., -1.])/4.0
 NB_SHOTS_DEFAULT = 256
 OPTIMIZATION_LEVEL_DEFAULT = 3
-LIST_OF_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore', 'ibmq_rochester']
+LIST_OF_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore', 'ibmq_rochester', 'qasm_simulator']
 META_DATA = []
 VARIABLE_PARAMS = [qk.circuit.Parameter('R1'),
                     qk.circuit.Parameter('R2'),
@@ -41,8 +26,29 @@ VARIABLE_PARAMS = [qk.circuit.Parameter('R1'),
                     qk.circuit.Parameter('R5'),
                     qk.circuit.Parameter('R6')]
 
-
 pi = np.pi
+
+
+
+
+
+
+# Sorry about this cluster fuck - hacked way to run smoothly with or without imperials token
+try:
+    provider_free
+except:
+    provider_free = qk.IBMQ.load_account()
+    simulator = qk.Aer.get_backend('qasm_simulator')
+
+    if 'kiran' in os.getcwd():
+        provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
+        provider_list = {'free':provider_free, 'imperial':provider_imperial}
+    else:
+        provider_list = {'free':provider_free}
+        LIST_OF_DEVICES = ['ibmq_16_melbourne', 'ibmq_vigo', 'qasm_simulator']
+    
+
+
 
 
 
@@ -54,6 +60,12 @@ instance = qk.aqua.QuantumInstance(actual_backend,
 
 
 
+
+# %% 
+
+# ------------------------------------------------------
+# Deals with circuit creation, measurement and param bindings - move some to core? 
+# ------------------------------------------------------
 
 
 
@@ -72,6 +84,8 @@ def create_circ(params = VARIABLE_PARAMS):
     c.ry(params[5], 2)
     c.barrier()
     return c
+
+
 
 
 def append_measurements(circ, measurements):
@@ -100,6 +114,9 @@ def append_measurements(circ, measurements):
     return circ
 
 
+
+
+
 def gen_meas_circuits(creator = create_circ, 
                       meas_settings = MEAS_DEFAULT, 
                       params = VARIABLE_PARAMS):
@@ -111,18 +128,22 @@ def gen_meas_circuits(creator = create_circ,
 
 
 
+# might need updateing to generalize
 def update_params(circ, val_dict=np.zeros(6)):
     '''Returns list of circuit with bound values DOES NOT MODIFY INPUT'''
     if type(circ) != list: 
-        print('WARNING ONLY USE LIST INPUT HERE')
-        return 'ONLY USE LIST INPUT FOR UPDATE PARAMS!!!'
-    val_dict = {key:val for key,val in zip(VARIABLE_PARAMS,val_dict)}
+        circ = [circ]
+    if type (val_dict) is not dict:
+        val_dict = {key:val for key,val in zip(VARIABLE_PARAMS,val_dict)}
     bound_circ = []
     for cc in circ:
         bound_circ.append(cc.bind_parameters(val_dict))
     return bound_circ  
 
 # %%
+# ------------------------------------------------------
+# Im not happy about this implimentation 
+# ------------------------------------------------------
 MAIN_CIRC = instance.transpile(gen_meas_circuits())
 
 def UpdateQuantumCircuit(creator = create_circ, 
@@ -139,6 +160,9 @@ def UpdateQuantumCircuit(creator = create_circ,
 
 
 # %% 
+# ------------------------------------------------------
+# Will eventually be mostly moved over to core? 
+# ------------------------------------------------------
 
 def freq_even(results):
     """ Frequency of +1 eigen values: result 0(1) corresponds to a -1(+1) eigen 
@@ -160,10 +184,11 @@ def F(experimental_params,
     """ Main function: take parameters and return an estimation of the fidelity 
     Different possible behaviors:
         +
-        + Shots is now handeled in the ``instance'' object, this ensueres every circuit is identical
+        + Shots is now handeled in the ``instance'' object, (needed to force every circuit to be identical)
         + Handeling of all circuit params is now passed to UpdateQuantumCircuit 
             + making use of 'quantum_instance' 
             + Handels circuits are on the same qubits and communication errors
+            + removed noise model having any effect - will add back in 
 
     """
     # if type(meas_settings) is not list: meas_settings = [meas_settings]
@@ -189,8 +214,10 @@ def F(experimental_params,
     return np.squeeze(res) #, meta_results
 
 
-
-
+# %%
+# ------------------------------------------------------
+# Deals with looking at backends / chosing a new device
+# ------------------------------------------------------
 
     
 def ListBackends():
@@ -202,6 +229,7 @@ def ListBackends():
         print('\n'.join(str(pro.backends()).split('IBMQBackend')))
         print('\n') 
     try:
+        print('current backend:')
         print(actual_backend.status())
     except:
         pass
@@ -211,14 +239,17 @@ def GetBackend(name, inplace=False):
     '''Gets back end preferencing the IMPERIAL provider
     Can pass in a named string or number from CurrentStatus output'''
     global actual_backend, instance
-    if name == 5: 
+    
+    if name == len(LIST_OF_DEVICES) or name == 'qasm_simulator':      # check if simulator is chosen
         temp = simulator
-    else:
+    else: # otherwise look for number/name
         if type(name) == int: name = LIST_OF_DEVICES[name-1]
-        try:
+        try: #  tries imperial first
             temp = provider_imperial.get_backend(name)
         except:
             temp = provider_free.get_backend(name)
+            
+    # if inplace update the current environment variables
     if inplace:
         actual_backend = temp
         instance = qk.aqua.QuantumInstance(actual_backend, 
@@ -234,11 +265,13 @@ def CurrentStatus():
     for device in LIST_OF_DEVICES: # for each device
         ba = GetBackend(device);ct+=1
         print(ct, ':   ', ba.status()) # print status
-    ct+=1
-    print(ct, ':   ', simulator.status()) # also print simulator (for completeness)
-    
-# %%
+  
 
+
+# %%
+# ------------------------------------------------------
+# This helps export relevant environment params
+# ------------------------------------------------------
 
 def params_to_dict():
     di = {'shots':NB_SHOTS_DEFAULT,
@@ -253,7 +286,9 @@ def reset_meta_data():
     del(META_DATA) # should probaby ask for user prompt
     META_DATA = []
 
-# %%
+
+
+# %% Test
 if __name__ == '__main__':
     x_opt = np.array([3., 3., 2., 3., 3., 1.]) * np.pi/2
     x_loc = np.array([1., 0., 4., 0., 3., 0.]) * np.pi/2

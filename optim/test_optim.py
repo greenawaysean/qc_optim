@@ -6,27 +6,27 @@ Created on Thu Jan 23 12:39:09 2020
 """
 
 import test_GHZ as qc
-import sys, dill, os
-
-if 'fred' in os.getcwd():
-    sys.path.insert(0, '/home/fred/Desktop/GPyOpt/') 
-elif 'kiran' in os.getcwd():
-    sys.path.insert(0, '/home/kiran/QuantumOptimization/GPyOpt/') ## Fork from https://github.com/FredericSauv/GPyOpt
-
-import GPyOpt
+import sys, dill, os, time, socket
 import numpy as np
 from qiskit.providers.aer.noise import NoiseModel
 from qiskit.providers.aer import noise
 from qiskit.providers.aer.noise.errors import ReadoutError
 
 
+if 'fred' in os.getcwd():  ## Fork from https://github.com/FredericSauv/GPyOpt
+    sys.path.insert(0, '/home/fred/Desktop/GPyOpt/') 
+elif 'level12' in socket.gethostname():
+    sys.path.insert(0, '/home/kiran/QuantumOptimization/GPyOpt/')
+elif 'Lambda' in socket.gethostname():
+    sys.path.insert(0, '/home/kiran/Documents/onedrive/Active_Research/QuantumSimulation/GPyOpt')
+    
+import GPyOpt
 
-# Global params
-NB_SHOTS = 128 ## IS REDUNDENT HERE
 
 
 
 
+# Easy device choosing when run from file
 qc.CurrentStatus()
 chosen_device = int(input('SELECT IBM DEVICE:'))
 qc.GetBackend(chosen_device, inplace=True)
@@ -64,11 +64,11 @@ noise_essex = noise.device.basic_device_noise_model(properties)
 # 
 # ===================
 ## Without noise
-def f_average(params, shots = NB_SHOTS, noise_model = NoiseModel()):
+def f_average(params, noise_model = NoiseModel()):
     """  estimate of the fidelity"""
-    if np.ndim(params) >1 : res = np.array([f_average(p, shots=shots, noise_model=noise_model) for p in params])
+    if np.ndim(params) >1 : res = np.array([f_average(p, noise_model=noise_model) for p in params])
     else: 
-        res = qc.F(params, shots = shots, noise_model=noise_model)
+        res = qc.F(params, noise_model=noise_model)
         print(res)
         res = 1 - np.atleast_1d(res)
     return res
@@ -106,7 +106,7 @@ def gen_res(bo):
 # ===================
 # BO setup
 # ===================
-NB_INIT = 40
+NB_INIT = 20
 X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
 DOMAIN_DEFAULT = [(0, 2*np.pi) for i in range(6)]
 EPS = np.pi/2
@@ -123,7 +123,7 @@ BO_ARGS_DEFAULT = {'domain': DOMAIN_BO, 'initial_design_numdata':NB_INIT,
 # Ideal case: no noise
 # 20/25 works
 # ===================
-NB_ITER = 80
+NB_ITER = 20
 Bopt = GPyOpt.methods.BayesianOptimization(f_average, **BO_ARGS_DEFAULT)    
 Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 ### Look at results found
@@ -155,7 +155,11 @@ dict_to_dill = {'Bopt_results':res_to_dill,
                 'Circ':qc.MAIN_CIRC[0],
                 'Device_config':qc.params_to_dict()}
 
-file_name = '_res_singapore_3.pkl'
+
+
+
+# reduce risk of overwriting filename 
+file_name = '_res_singapore_' + str(int(np.floor(1000*time.time())%2**16)) + '.pkl'
 with open(file_name, 'wb') as f:
     dill.dump(dict_to_dill, f)
 
@@ -167,47 +171,47 @@ with open(file_name, 'rb') as f:
 
 
 
-# # ===================
-# # Noise model essex
-# # ===================
-# NB_ITER = 50
-# f_essex = lambda x: f_average(x, shots=NB_SHOTS, noise_model=noise_essex)
-# Bopt_essex = GPyOpt.methods.BayesianOptimization(f_essex, **BO_ARGS_DEFAULT)    
-# Bopt_essex.run_optimization(max_iter = NB_ITER, eps = 0)
-# ### Look at results found
-# (x_seen_essex, y_seen_essex), (x_exp_essex,y_exp_essex) = Bopt_essex.get_best()
-# f_test(x_seen_essex)
-# f_test(x_exp_essex)
-# print(Bopt_essex.model.model)
-# Bopt_essex.plot_convergence()
+# ===================
+# Noise model essex
+# ===================
+NB_ITER = 10
+f_essex = lambda x: f_average(x, noise_model=noise_essex)
+Bopt_essex = GPyOpt.methods.BayesianOptimization(f_essex, **BO_ARGS_DEFAULT)    
+Bopt_essex.run_optimization(max_iter = NB_ITER, eps = 0)
+### Look at results found
+(x_seen_essex, y_seen_essex), (x_exp_essex,y_exp_essex) = Bopt_essex.get_best()
+f_test(x_seen_essex)
+f_test(x_exp_essex)
+print(Bopt_essex.model.model)
+Bopt_essex.plot_convergence()
 
 
-# # ===================
-# # BO setup with noise in ro
-# # case 1 different readout errors for each qubit
-# # case 2 same readout errors for each qubit
-# # so far as difficult
-# # ===================
-# ### Run optimization // case 1
-# f_noisy = lambda x: f_average(x, shots=1000, noise_model=noise_ro)
-# Bopt_noisy = GPyOpt.methods.BayesianOptimization(f_noisy, **BO_ARGS_DEFAULT)    
-# Bopt_noisy.run_optimization(max_iter = NB_ITER, eps = 0)
-# # Look at results found
-# (x_seen_noisy, y_seen_noisy), (x_exp_noisy,y_exp_noisy) = Bopt_noisy.get_best()
-# print(f_test(x_seen_noisy))
-# print(f_test(x_exp_noisy))
-# Bopt_noisy.plot_convergence()
+# ===================
+# BO setup with noise in ro
+# case 1 different readout errors for each qubit
+# case 2 same readout errors for each qubit
+# so far as difficult
+# ===================
+### Run optimization // case 1
+f_noisy = lambda x: f_average(x, noise_model=noise_ro)
+Bopt_noisy = GPyOpt.methods.BayesianOptimization(f_noisy, **BO_ARGS_DEFAULT)    
+Bopt_noisy.run_optimization(max_iter = NB_ITER, eps = 0)
+# Look at results found
+(x_seen_noisy, y_seen_noisy), (x_exp_noisy,y_exp_noisy) = Bopt_noisy.get_best()
+print(f_test(x_seen_noisy))
+print(f_test(x_exp_noisy))
+Bopt_noisy.plot_convergence()
 
 
-# ### Run optimization // case 2 sy
-# f_noisy2 = lambda x: f_average(x, shots=1000, noise_model=noise_rosym)
-# Bopt_noisy2 = GPyOpt.methods.BayesianOptimization(f_noisy2, **BO_ARGS_DEFAULT)    
-# Bopt_noisy2.run_optimization(max_iter = NB_ITER, eps = 0)
-# # Look at results found
-# (x_seen_noisy2, y_seen_noisy2), (x_exp_noisy2,y_exp_noisy2) = Bopt_noisy2.get_best()
-# print(f_noisy2(x_exp_noisy2))
-# print(f_test(x_exp_noisy2))
-# Bopt_noisy2.plot_convergence()
+### Run optimization // case 2 sy
+f_noisy2 = lambda x: f_average(x, noise_model=noise_rosym)
+Bopt_noisy2 = GPyOpt.methods.BayesianOptimization(f_noisy2, **BO_ARGS_DEFAULT)    
+Bopt_noisy2.run_optimization(max_iter = NB_ITER, eps = 0)
+# Look at results found
+(x_seen_noisy2, y_seen_noisy2), (x_exp_noisy2,y_exp_noisy2) = Bopt_noisy2.get_best()
+print(f_noisy2(x_exp_noisy2))
+print(f_test(x_exp_noisy2))
+Bopt_noisy2.plot_convergence()
 
 
 
