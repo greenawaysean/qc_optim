@@ -4,6 +4,10 @@
 Created on Tue Feb 25 18:11:28 2020
 
 @author: fred
+TODO: ability to incorporate noise
+TODO: ability to incorporate layouts
+TODO: ability to deal with different number of shots
+TODO: implement sampling (of the measurement settings) strat
 """
 import qiskit as qk
 import numpy as np
@@ -48,8 +52,8 @@ class Cost():
     append_measurements
     
     Terminology:
-        + ansatz: callable (function so far but may be extended to an object) 
-                 which takes parameter as input and return a circuit
+        + ansatz: callable function (may be a callable object in the future) 
+                 which takes parameters as input and return a circuit
         + circuit: quantum circuit 
         + measurable circuit: circuit with measurement operations
         
@@ -96,9 +100,8 @@ class Cost():
             
             if self._keep_res: self._res.append(results.to_dict())
             counts = [results.get_counts(ii) for ii in range(len(self._list_meas))]
-            res = self._meas_func(counts)
-            
-        if self.verbose: print(res)
+            res = self._meas_func(counts)    
+            if self.verbose: print(res)
         return np.squeeze(res) 
     
     def _transpile_measurable_circuits(self, params):
