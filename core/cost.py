@@ -7,6 +7,7 @@ Created on Tue Feb 25 18:11:28 2020
 """
 import qiskit as qk
 import numpy as np
+import pdb
 #import itertools as it
 
 pi =np.pi
@@ -81,8 +82,9 @@ class Cost():
         self._gen_qk_vars()
         self._transpile_measurable_circuits(self._qk_vars)
     
-    def __call__(self, params):
+    def __call__(self, params, debug=False):
         """ Estimate the CostFunction for some parameters"""
+        if debug: pdb.set_trace()
         if np.ndim(params) > 1 :
             res = np.array([self.__call__(p) for p in params])
         else:
@@ -132,22 +134,23 @@ class GHZPauliCost(Cost):
     # Hardcoded list of measurements settings for GHZ of different sizes
     # {'nb_qubits':(meas_strings, weights)}, wehere the measurement string is a 
     # list of Pauli operators and the weights correspond to the decomposition 
-    # of the GHZ state in the 
-    # Could be automated
+    # of the GHZ state in the Pauli tensor basis (up to a constant 1/dim)
+    # It could be automated to deal with arbitrary size state
     _GHZ_PAULI_DECOMP = {
     '2':(
             ['xx', 'yy', 'zz'], 
-            np.array([1.,-1.,1.])/2**2
+            np.array([1.,-1.,1.])
             ),
     '3':(
             ['1zz','xxx','xyy','yxy','yyx','z1z','zz1'], 
-            np.array([1., 1., -1., -1., -1., 1.,1.])/2**3
+            np.array([1., 1., -1., -1., -1., 1.,1.])
             ),
     '4':( 
-            ['11zz','1z1z','1zz1','xxxx','xxyy','xyxy','xyyx','yxxy','yxyx','yyxx','yyyy',
-           'z11z','z1z1','zz11','zzzz'],
-            np.array([1.,1.,1.,1.,-1.,-1.,-1.,-1.,-1.,-1.,1.,1.,1.,1.,1.])/2**4
-            )}
+            ['11zz','1z1z','1zz1','xxxx','xxyy','xyxy','xyyx','yxxy','yxyx',
+             'yyxx','yyyy','z11z','z1z1','zz11','zzzz'],
+            np.array([1.,1.,1.,1.,-1.,-1.,-1.,-1.,-1.,-1.,1.,1.,1.,1.,1.])
+            )
+        }
         
     def _gen_list_meas(self):
         return self._GHZ_PAULI_DECOMP[str(self.nb_qubits)][0]
@@ -209,11 +212,13 @@ class GHZWitness2Cost(Cost):
 # returned by qiskit
 # ------------------------------------------------------
 def freq_even(count_result, indices=None):
-    """ return a frequency of +1 eigenvalues:
-    +1 e.v. corresponds to the case where the number of 0 in the outcome is even
+    """ return the frequency of +1 eigenvalues:
+    The +1 e.v. case corresponds to the case where the number of 0 in the 
+    outcome string is even
     
     indices: list<integer>
-             if not None it allows to consider only selected elements of the string
+             if not None it allows to consider only selected elements of the 
+             outcome string
     """
     nb_odd, nb_even = 0, 0
     for k, v in count_result.items():
@@ -223,14 +228,17 @@ def freq_even(count_result, indices=None):
     return nb_even / (nb_odd + nb_even)
 
 def expected_parity(results):
-    """ return the estimated expected value of the parity operator:
-    P = P+ - P-
+    """ return the estimated value of the expectation of the parity operator:
+    P = P+ - P- where P+(-) is the projector 
+    Comment: Parity operator may nor be the right name
     """
     return 2 * freq_even(results) - 1
 
 
 def get_substring(string, list_indices=None):
-    """ probably already exist or better way.. still"""
+    """ return a substring comprised of only the elements associated to the 
+    list of indices
+    Comment: probably already exist or there may be a better way"""
     if list_indices == None:
         return string
     else:
@@ -284,3 +292,49 @@ def bind_params(circ, param_values, param_variables):
     bound_circ = [cc.bind_parameters(val_dict) for cc in circ]
     return bound_circ  
 
+
+if __name__ == '__main__':
+    #-----#
+    # GHZ
+    #-----#
+    # Create an ansatz capable of generating a GHZ state (not the most obvious 
+    # one here) with the set of params X_SOL
+    def ansatz(params):
+        c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), 
+                        qk.QuantumRegister(1, 'b'), qk.QuantumRegister(1,'c'))
+        c.rx(params[0], 0)
+        c.rx(params[1], 1)
+        c.ry(params[2], 2)
+        c.barrier()
+        c.cnot(0,2) 
+        c.cnot(1,2) 
+        c.barrier()
+        c.rx(params[3], 0)
+        c.rx(params[4], 1)
+        c.ry(params[5], 2)
+        c.barrier()
+        return c
+    X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
+    X_LOC = np.pi/2 * np.array([1., 0., 4., 0., 3., 0.])
+    X_RDM = np.random.uniform(0.0, 2*pi, size=(6,1))
+    
+    # Create an instance
+    sim = qk.Aer.get_backend('qasm_simulator')
+    inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+    
+    # Verif the values of the different GHZ cost
+    # Fidelity
+    ghz_cost = GHZPauliCost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+    assert ghz_cost(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert np.abs(ghz_cost(X_LOC) - 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.5 (up to sampling error)"
+    
+    # Witnesses inspired cost functions: they are different compared to the fidelity
+    # but get maximized only when the state is the right one
+    ghz_witness1 = GHZWitness1Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+    assert ghz_witness1(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert np.abs(ghz_witness1(X_LOC) - 0.31) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"
+
+    ghz_witness2 = GHZWitness2Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+    assert ghz_witness2(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert np.abs(ghz_witness2(X_LOC) + 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"    
+    
