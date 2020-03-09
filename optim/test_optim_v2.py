@@ -47,40 +47,93 @@ def ansatz(params):
     c.barrier()
     return c
 
-
-ghz_cost = cost.GHZPauliCost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
-ghz_cost_test = cost.GHZPauliCost(ansatz=ansatz, instance = inst_test, N=3, nb_params=6)
+# different cost functions 
+ghz_fidelity = cost.GHZPauliCost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+ghz_fidelity_test = cost.GHZPauliCost(ansatz=ansatz, instance = inst_test, N=3, nb_params=6)
+ghz_f2 = cost.GHZWitness2Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+ghz_f1 = cost.GHZWitness1Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
 
 # ===================
 # BO Optim
-# Ideal case: no noise
+# No noise / Use of fidelity
 # 20/25 works
-# ===================
-NB_INIT = 20
-X_SOL = np.pi/2 * np.array([[1.,1.,2.,1.,1.,1.]])
-DOMAIN_FULL = [(0, 2*np.pi) for i in range(6)]
 #EPS = np.pi/2
 #DOMAIN_RED = [(x-EPS, x+EPS) for x in X_SOL]
+# ===================
+# setup
+NB_INIT = 30
+NB_ITER = 20
+X_SOL = np.pi/2 * np.array([[1.,1.,2.,1.,1.,1.]])
+DOMAIN_FULL = [(0, 2*np.pi) for i in range(6)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
 bo_args = ut.gen_default_argsbo()
-bo_args.update({'domain': DOMAIN_BO})
-cost_bo = lambda x: 1-ghz_cost(x) 
-cost_bo(X_SOL) 
+bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
+cost_bo = lambda x: 1-ghz_fidelity(x) 
 
-
-NB_ITER = 20
+#optim
 Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
+print("start optim")
 Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
-### Look at results found
+
+# Results found
 (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-ghz_cost_test(x_seen)
-ghz_cost_test(x_exp)
-#print(f_test(x_exp))
-#print(Bopt.model.model)
-#Bopt.plot_convergence()
-#
-#
-#
+ghz_fidelity_test(x_seen)
+ghz_fidelity_test(x_exp)
+print(Bopt.model.model)
+Bopt.plot_convergence()
+
+
+# ===================
+# BO Optim
+# No noise / Use of other cost function
+# ===================
+NB_INIT = 75
+NB_ITER = 50
+X_SOL = np.pi/2 * np.array([[1.,1.,2.,1.,1.,1.]])
+DOMAIN_FULL = [(0, 2*np.pi) for i in range(6)]
+DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
+bo_args = ut.gen_default_argsbo()
+bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
+cost_bo = lambda x: 1 - ghz_f2(x) 
+
+#optim
+Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
+print("start optim")
+Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
+
+# Look at results found
+(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
+ghz_fidelity_test(x_seen)
+ghz_fidelity_test(x_exp)
+print(Bopt.model.model)
+Bopt.plot_convergence()
+
+# ===================
+# BO Optim
+# No noise / Use of other cost function
+# ===================
+NB_INIT = 75
+NB_ITER = 50
+X_SOL = np.pi/2 * np.array([[1.,1.,2.,1.,1.,1.]])
+DOMAIN_FULL = [(0, 2*np.pi) for i in range(6)]
+DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
+bo_args = ut.gen_default_argsbo()
+bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
+cost_bo = lambda x: 1 - ghz_f1(x) 
+
+#optim
+Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
+print("start optim")
+Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
+
+# Look at results found
+(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
+ghz_fidelity_test(x_seen)
+ghz_fidelity_test(x_exp)
+print(Bopt.model.model)
+Bopt.plot_convergence()
+
+
 ## ===================
 ## Get a baseline to compare to BO
 ## ===================
