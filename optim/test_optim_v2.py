@@ -26,6 +26,8 @@ chosen_device = int(input('SELECT IBM DEVICE:'))
 bem.get_backend(chosen_device, inplace=True)
 inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
                                      optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
+inst_test = bem.gen_instance_from_current(nb_shots=8192, 
+                                     optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
 
 # ===================
 # Define ansatz and initialize costfunction
@@ -47,12 +49,15 @@ def ansatz(params):
 
 
 ghz_cost = cost.GHZPauliCost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+ghz_cost_test = cost.GHZPauliCost(ansatz=ansatz, instance = inst_test, N=3, nb_params=6)
 
 # ===================
 # BO Optim
+# Ideal case: no noise
+# 20/25 works
 # ===================
 NB_INIT = 20
-X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
+X_SOL = np.pi/2 * np.array([[1.,1.,2.,1.,1.,1.]])
 DOMAIN_FULL = [(0, 2*np.pi) for i in range(6)]
 #EPS = np.pi/2
 #DOMAIN_RED = [(x-EPS, x+EPS) for x in X_SOL]
@@ -60,18 +65,16 @@ DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enu
 bo_args = ut.gen_default_argsbo()
 bo_args.update({'domain': DOMAIN_BO})
 cost_bo = lambda x: 1-ghz_cost(x) 
-cost_bo(X_SOL) # to be verif
+cost_bo(X_SOL) 
 
-# ===================
-# Ideal case: no noise
-# 20/25 works
-# ===================
+
 NB_ITER = 20
 Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
 Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 ### Look at results found
 (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-#print(f_test(x_seen))
+ghz_cost_test(x_seen)
+ghz_cost_test(x_exp)
 #print(f_test(x_exp))
 #print(Bopt.model.model)
 #Bopt.plot_convergence()
