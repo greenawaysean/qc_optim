@@ -4,18 +4,24 @@
 Created on Tue Feb 25 18:11:28 2020
 
 @author: fred
-TODO: ability to incorporate noise
-TODO: ability to incorporate layouts
-TODO: ability to deal with different number of shots
-TODO: implement sampling (of the measurement settings) strat
+TODO: (IN PROGRESS)implement cyclical graph states 
+TODO: (SOON) implement more general graph states 
+TODO: (LATER) ability to deal with different number of shots 
+TODO: (LATER) implement sampling (of the measurement settings) strat 
+TODO: (LATER) more flexible number of shots
+TODO: (LATER)how to make sure that two cost functions are computed based on the 
+same transpiled circuits (e.g. fidelity and another cost function)
+
+Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the 
+quantum instance passed when initializing a Cost, i.e. it is outside of the
+scope of the classes here
 """
 import qiskit as qk
 import numpy as np
 import pdb
 #import itertools as it
-
 pi =np.pi
-NB_SHOTS_DEFAULT = 256
+
 
 class Cost():
     """
@@ -57,20 +63,20 @@ class Cost():
         + circuit: quantum circuit 
         + measurable circuit: circuit with measurement operations
         
-    
     """
 
     def __init__(self, ansatz, N,  instance, nb_params, fix_transpile = True,
                   keep_res = True, verbose = True, noise_model = None,
-                  **args):
+                  debug=False, **args):
         """ initialize the cost function taking as input parameters:
             + ansatz 
             + N <int>: the number of qubits
             + simulator
         """
+        if debug: pdb.set_trace()
         self.ansatz = ansatz
         self.instance = instance
-        self.nb_qubits = N #may be redundant
+        self.nb_qubits = N  # may be redundant
         self.dim = np.power(2,N)
         self.nb_params = nb_params # maybe redundant
         self.fix_transpile = fix_transpile
@@ -119,12 +125,15 @@ class Cost():
         self._qk_vars = [qk.circuit.Parameter(n) for n in name_params]
         
     def _init_res(self):
+        """ Flush the res accumulated so far """
         self._res = []
 
     def _gen_list_meas(self):
+        """ To be implemented in the subclasses """
         raise NotImplementedError()
         
     def _gen_meas_func(self):
+        """ To be implemented in the subclasses """
         raise NotImplementedError()
 
     
@@ -208,8 +217,139 @@ class GHZWitness2Cost(Cost):
         return meas_func
     
     
+# Subclasses: Graph states
+class GraphCyclPauliCost(Cost):
+    """ A N-qubit Cyclical graph has edges = [[1,2],[2,3],...,[N-1,N],[N,1]]
+    Cost = fidelity, estimated based on the expected values of the N-fold Pauli 
+    operators (e.g. 'XXY')
+    """   
+    # Hardcoded list of measurements settings for Cyclical graph states of 
+    #different sizes {'nb_qubits':(meas_strings, weights)}, wehere the measurement 
+    # string is a list of Pauli operators and the weights correspond to the 
+    # decomposition of the target state in the Pauli tensor basis (up to a constant 1/dim)
+    # It could be automated to deal with arbitrary size state
+    _CYCLICAL_PAULI_DECOMP = {
+    '2':(
+            ['1x','x1','xx'], 
+            np.array([1,1,1])
+            ),
+    '3':(
+            ['1yy','xxx','xzz','y1y','yy1','zxz','zzx'], 
+            np.array([1,-1,1,1,1,1,1])
+            ),
+    '4':( 
+            ['1x1x','1yxy','1zxz','x1x1','xxxx','xy1y','xz1z','y1yx','yxy1','yyzz',
+             'yzzy','z1zx','zxz1','zyyz','zzyy'],
+            np.array([1,-1,1,1,1,-1,1,-1,-1,1,1,1,1,1,1])
+            ),
+    '5':( 
+            ['11zxz','1x1yy','1xzzx','1yxxy','1yy1x','1zxz1','1zyyz','x1xzz','x1yy1',
+             'xxxxx','xxy1y','xy1yx','xyzzy','xz11z','xzzx1','y1x1y','y1yxx','yxxy1',
+             'yxyzz','yy1x1','yyz1z','yz1zy','yzzyx','z11zx','z1zyy','zx1xz','zxz11',
+             'zyxyz','zyyz1','zzx1x','zzyxy'],
+            np.array([1,1,1,1,1,1,1,1,1,-1,1,1,-1,1,1,1,1,1,-1,1,1,1,-1,1,1,1,1,-1,1,1,-1])
+            ),
+    '6':( 
+            ['111zxz','11zxz1','11zyyz','1x1x1x','1x1yxy','1xz1zx','1xzzyy','1yxxxy',
+             '1yxy1x','1yy1yy','1yyzzx','1zx1xz','1zxz11','1zyxyz','1zyyz1','x1x1x1',
+             'x1xz1z','x1yxy1','x1yyzz','xxxxxx','xxxy1y','xxy1yx','xxyzzy','xy1x1y',
+             'xy1yxx','xyz1zy','xyzzyx','xz111z','xz1zx1','xzzxzz','xzzyy1','y1x1yx',
+             'y1xzzy','y1yxxx','y1yy1y','yxxxy1','yxxyzz','yxy1x1','yxyz1z','yy1xzz',
+             'yy1yy1','yyz11z','yyzzx1','yz11zy','yz1zyx','yzzx1y','yzzyxx','z111zx',
+             'z11zyy','z1zx1x','z1zyxy','zx1xz1','zx1yyz','zxz111','zxzzxz','zyxxyz',
+             'zyxyz1','zyy1xz','zyyz11','zzx1yy','zzxzzx','zzyxxy','zzyy1x'],
+            np.array([1,1,1,1,-1,1,1,-1,-1,1,1,1,1,-1,1,1,1,-1,1,1,-1,-1,1,-1,-1,
+                      -1,1,1,1,1,1,-1,1,-1,1,-1,1,-1,-1,1,1,1,1,1,-1,1,1,1,1,1,
+                      -1,1,1,1,1,1,-1,1,1,1,1,1,1])
+            )
+        }
+        
+    def _gen_list_meas(self):
+        return self._CYCLICAL_PAULI_DECOMP[str(self.nb_qubits)][0]
     
+    def _gen_meas_func(self):
+        """ expected parity associated to each of the measurement settings"""
+        weights = self._CYCLICAL_PAULI_DECOMP[str(self.nb_qubits)][1]
+        dim = self.dim
+        def meas_func(counts):
+            return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
+
+        return meas_func
+
+
+class GraphCyclWitness1Cost(Cost):
+    """ Cost based on witnesses for genuine entanglement ([guhne2005])
+    Stabilizer generators S_l of cyclical graph states are (for N=4 qubits) 
+        S = <XZIZ, ZXZI, IZXZ, ZIZX>
+    To estimate S_1 to S_N only requires two measurement settings: XZXZ, ZXZX
+    Cost =  (S_1 - 1)/2 + Prod_l>1 [(S_l + 1)/2] 
+    !!! ONLY WORK FOR EVEN N FOR NOW !!!
+    !!! MORE EXPLAIN NEEDED !!!
+    """   
     
+    def _gen_list_meas(self):
+        """ two measurement settings ['zxzx...zxz', 'xzxzx...xzx']"""
+        N = self.nb_qubits
+        if (N%2): 
+            raise NotImplementedError("ATM cannot deal with odd N")
+        else:
+            meas_odd = "".join(['zx'] * (N//2))
+            meas_even = "".join(['xz'] * (N//2))
+        return [meas_odd, meas_even]
+    
+    def _gen_meas_func(self):
+        """ functions defining how outcome counts should be used """
+        N = self.nb_qubits
+        if (N%2): 
+            raise NotImplementedError("ATM cannot deal with odd N")
+        else:
+            ind_odd = [[i, i+1, i+2] for i in range(0,N-2, 2)] + [[0, N-2, N-1]]  
+            ind_even = [[i, i+1, i+2] for i in range(1,N-2, 2)] + [[0, 1, N-1]]
+            def meas_func(counts):
+                counts_odd, counts_even = counts[0], counts[1]
+                S_odd = np.array([expected_parity(counts_odd, indices=i) for i in ind_odd])
+                S_even = np.array([expected_parity(counts_even, indices=i) for i in ind_even])
+                return 0.5*(S_even[-1]-1) + np.prod((S_odd+1)/2) * np.prod((S_even[:-1]+1)/2) 
+        return meas_func
+
+class GraphCyclWitness2Cost(Cost):
+    """ Exactly as GraphCyclWitness1Cost except that Cost =  Sum_l[S_l] - (N-1)I """   
+    def _gen_list_meas(self):
+        """ two measurement settings ['zxzx...zxz', 'xzxzx...xzx']"""
+        N = self.nb_qubits
+        if (N%2): 
+            raise NotImplementedError("ATM cannot deal with odd N")
+        else:
+            meas1 = "".join(['zx'] * (N//2))
+            meas2 = "".join(['xz'] * (N//2))
+        return [meas1, meas2]
+    
+    def _gen_meas_func(self):
+        """ functions defining how outcome counts should be used """
+        N = self.nb_qubits
+        if (N%2): 
+            raise NotImplementedError("ATM cannot deal with odd N")
+        else:
+            ind_odd = [[i, i+1, i+2] for i in range(0,N-2, 2)] + [[0, N-2, N-1]]  
+            ind_even = [[i, i+1, i+2] for i in range(1,N-2, 2)] + [[0, 1, N-1]]
+            def meas_func(counts):
+                counts_odd, counts_even = counts[0], counts[1]
+                S_odd = np.array([expected_parity(counts_odd, indices=i) for i in ind_odd])
+                S_even = np.array([expected_parity(counts_even, indices=i) for i in ind_even])
+                return np.sum(S_odd) + np.sum(S_even) - (N-1)
+        return meas_func
+
+class GraphCyclWitness3Cost(Cost):
+    """ Exactly as GraphCyclWitness1Cost except that Cost =  XXX
+    To implement"""   
+    def _gen_list_meas(self):
+        """ two measurement settings ['zxzx...zxz', 'xzxzx...xzx']"""
+        raise NotImplementedError("To be implemented")
+    
+    def _gen_meas_func(self):
+        """ functions defining how outcome counts should be used """
+        raise NotImplementedError("To be implemented")
+        
 # ------------------------------------------------------
 # Functions to compute expected values based on measurement outcomes counts as 
 # returned by qiskit
@@ -225,17 +365,18 @@ def freq_even(count_result, indices=None):
     """
     nb_odd, nb_even = 0, 0
     for k, v in count_result.items():
-        sub_k = get_substring(k, indices)
-        nb_even += v * (sub_k.count('0')%2 == 0)
-        nb_odd += v * (sub_k.count('0')%2)
+        k_invert = k[::-1]
+        sub_k = get_substring(k_invert, indices)
+        nb_even += v * (sub_k.count('1')%2 == 0)
+        nb_odd += v * (sub_k.count('1')%2)
     return nb_even / (nb_odd + nb_even)
 
-def expected_parity(results):
+def expected_parity(results,indices=None):
     """ return the estimated value of the expectation of the parity operator:
     P = P+ - P- where P+(-) is the projector 
     Comment: Parity operator may nor be the right name
     """
-    return 2 * freq_even(results) - 1
+    return 2 * freq_even(results, indices=indices) - 1
 
 
 def get_substring(string, list_indices=None):
@@ -263,11 +404,14 @@ def append_measurements(circ, measurements):
             circ.measure(ct_q, ct_m)
             ct_m+=1
         elif basis == 'x':
-            circ.u3(pi/2, 0, 0, ct_q)
+            #circ.u3(pi/2, 0, 0, ct_q)
+            circ.h(ct_q)
             circ.measure(ct_q, ct_m)
             ct_m+=1
         elif basis == 'y':
-            circ.u3(pi/2, -pi/2, -pi/2, ct_q)
+            #circ.u3(pi/2, -pi/2, -pi/2, ct_q)
+            circ.sdg(ct_q)
+            circ.h(ct_q)
             circ.measure(ct_q, ct_m)
             ct_m+=1
         elif basis == '1':
@@ -296,7 +440,23 @@ def bind_params(circ, param_values, param_variables):
     return bound_circ  
 
 
+
+
 if __name__ == '__main__':
+    #-----#
+    # Verif conventions
+    #-----#
+    def ansatz(params):
+        c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(2, 'b'))
+        c.h(0)
+        return c
+    
+    sim = qk.Aer.get_backend('qasm_simulator')
+    inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+    m_c = gen_meas_circuits(ansatz, ['zz'], [])
+    res = inst.execute(m_c)
+    counts = res.get_counts()
+    
     #-----#
     # GHZ
     #-----#
@@ -340,4 +500,60 @@ if __name__ == '__main__':
     ghz_witness2 = GHZWitness2Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
     assert ghz_witness2(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
     assert np.abs(ghz_witness2(X_LOC) + 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"    
+    
+    
+    
+    #-----#
+    # Cyclical graph states
+    #-----#
+    N_graph = 6
+    N_params = 6
+    def ansatz(params):
+        c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(1, 'b'),
+                              qk.QuantumRegister(1,'c'),qk.QuantumRegister(1,'d'),
+                              qk.QuantumRegister(1,'e'),qk.QuantumRegister(1,'f'))
+        c.ry(params[0],0)
+        c.ry(params[1],1)
+        c.ry(params[2],2)
+        c.ry(params[3],3)
+        c.ry(params[4],4)
+        c.ry(params[5],5)
+        c.barrier()
+        c.cu1(pi,0,1)
+        c.cu1(pi,2,3)
+        c.cu1(pi,4,5)
+        c.barrier()
+        c.cu1(pi,1,2)
+        c.cu1(pi,3,4)
+        c.cu1(pi,5,0)
+        c.barrier()
+        return c
+
+    X_SOL = np.pi/2 * np.ones(N_params) # sol of the cycl graph state for this ansatz
+    X_RDM = np.array([1.70386471,1.38266762,3.4257722,5.78064,3.84102323,2.37653078])
+    #X_RDM = np.random.uniform(low=0., high=2*np.pi, size=(N_params,))
+    
+    # Create an instance
+    sim = qk.Aer.get_backend('qasm_simulator')
+    inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+    graph_cost = GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=N_graph
+                                    , nb_params=N_params)
+    fid_opt = graph_cost(X_SOL)
+    fid_rdm = graph_cost(X_RDM)
+    assert fid_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert (fid_opt-fid_rdm) > 1e-4, "For this ansatz, parameters, cost function should be one"
+    
+    graph_cost1 = GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
+    cost1_opt = graph_cost1(X_SOL)
+    cost1_rdm = graph_cost1(X_RDM)
+    assert cost1_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert  (fid_rdm - cost1_rdm) > 1e-4, "cost function1 should be lower than true fid"
+    
+    graph_cost2 = GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
+    cost2_opt = graph_cost2(X_SOL)
+    cost2_rdm = graph_cost2(X_RDM)
+    assert cost2_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
+    
+    
     
