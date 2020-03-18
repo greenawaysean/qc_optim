@@ -29,7 +29,8 @@ class BackendManager():
     """ Custom backend manager to deal with different users
     self.LIST_DEVICES : list of devices accessible to the user
     self.simulator: 'qasm_simulator' backend
-    self.current_backend: 'current' backend
+    self.current_backend: 'current' backend by default the simulator but which 
+        can be set updated by using get_backend method with inplace=True
     
     """
     def __init__(self):
@@ -60,8 +61,8 @@ class BackendManager():
 
     def get_backend(self, name, inplace=False):
         """ Gets back end preferencing the IMPERIAL provider
-        Can pass in a named string or number from CurrentStatus output
-        The name may be confusing as a method with the same name exists in qiskit
+        Can pass in a named string or number corresponding to get_current_status output
+        Comment: The name may be confusing as a method with the same name exists in qiskit
         """
         # check if simulator is chose
         if name == len(self.LIST_OF_DEVICES) or name == 'qasm_simulator':
@@ -89,9 +90,9 @@ class BackendManager():
         """ Generate an instance from the current backend
         Not sure this is needed here: 
             + maybe building an instance should be decided in the main_script
-            + maybe it should be done in teh cost function
+            + maybe it should be done in the cost function
             + maybe there is no need for an instance and everything can be 
-              dealt with 
+              dealt with transpile, compile
         """
         instance = qk.aqua.QuantumInstance(self.current_backend, shots=nb_shots,
                             optimization_level=optim_lvl)

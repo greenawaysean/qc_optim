@@ -23,8 +23,32 @@ I, X, Y, Z = qt.identity([2]), qt.sigmax(), qt.sigmay(), qt.sigmaz()
 Rx, Ry, Rz = qt.rx, qt.ry, qt.rz
 
 #======================#
-# The pauli N-fold tensor basis
+# Basis and decomposition
+# TODO: more factorization - gen_tensored_basis, symbolic as an input, gen_decompo
+# 
 #======================#
+
+# Computational basis
+def gen_computbasis_proj(N=3):
+    """ generate a list of the 2^N elements of computational basis proj"""
+    op_comput = [zero * zero.dag(), one * one.dag()]
+    return [tensor_listop(parts) for parts in it.product(*[op_comput]*N)]
+
+def gen_computbasis(N=3):
+    """ generate a list of the 4^N elements of computational basis"""
+    op_comput = [zero * zero.dag(), zero * one.dag(), one * zero.dag(), one * one.dag() ]
+    return [tensor_listop(parts) for parts in it.product(*[op_comput]*N)]
+
+def gen_computbasis_symbolic(N=3):
+    """ generate a list of the 4^N elements of computational basis symbols"""
+    op_comput = [('0','0'), ('0','1'), ('1','0'), ('1','1')]
+    return [str_to_proj(parts) for parts in it.product(*[op_comput]*N)]
+
+def str_to_proj(string):
+    """[('0','1'), ('1','1'), ('0','1')] -> '|010><111|' """
+    final = ft.reduce(lambda x, y : [x[0]+ y[0], x[1]+ y[1]], string, ['',''])
+    return '|' + final[0] + '><' + final[1] + '|'
+    
 # Basis and basis decomposition
 def gen_paulibasis(N=3):
     """ generate a list of the 4^N elements of the tensored Pauli basis"""
@@ -242,7 +266,62 @@ def connected(j, N, edges):
 
 #======================#
 # Expectations True and estimated
+# TODO: add measurement capabilities / re-factor 
+# 
 #======================#
+def proj_proba(list_proj, list_states):
+    """ Given a list of projectors [P1,.., Pn] s.t. \sum P_l = I and a list of
+    states return the measurement probabilities associated, 
+    i.e. for each state the probalities for each projector P_i in the list
+    return: probas as a nb_states x nb_proj np.array
+    """
+    probas = np.array([[qt.expect(P,s) for P in list_proj] for s in list_states])
+    assert np.allclose(np.sum(probas),1.), "proj_proba: probas do not sum to one"
+    return probas
+
+def proj_outcomes(list_proj, list_states, nb_meas):
+    """ Given a list of projectors and states return the measurement outcomes
+    return nb_outcomes as nb_states x nb_meas np.array where entry outcome
+    """
+    nb_outcomes = len(list_proj)
+    nb_states = len(list_states)
+    probas = proj_proba(list_proj=list_proj, list_states=list_states)
+    if type(nb_meas) == int: nb_meas = [nb_meas] * nb_states
+    choices = range(nb_outcomes)
+    nb_success = [np.random.choice(choices, size=n, replace=True, p=p) 
+                            for s, n, p in zip(list_states, nb_meas, probas)]
+    
+    return nb_success
+
+def proj_freq(list_proj, list_states, nb_meas):
+    """ Given a list of projectors and states return the measurement 
+    probabilities associated
+    return nb_outcomes nb_states x nb_meas np.array
+    """
+    nb_outcomes = len(list_proj)
+    nb_states = len(list_states)
+    probas = proj_proba(list_proj=list_proj, list_states=list_states)
+    if type(nb_meas) == int: nb_meas = [nb_meas] * nb_states
+    choices = range(nb_outcomes)
+    nb_success = [np.random.choice(choices, size=n, replace=True, p=p) 
+                            for s, n, p in zip(list_states, nb_meas, probas)]
+    
+    return nb_success
+
+def estimate_op_herm(list_op, list_states, nb_meas = 0):
+    """ Estimates values of gen herm operators H = \sum lambda |lambda><lambda|
+    
+    list_op: list<qutip.Operators> Not implemented ()
+             list<(decomp_projectors, decomp_weights)>
+    
+    if nb_meas = 0: then return exact expected values
+       nb_meas > 0: then return estimated values based on a total of n_meas per
+                    pairs of (state, op)
+       list<int> : it is expected that this list has the same length as list_op
+    """
+    pass
+
+
 def estimate_op_proj(list_proj, list_states, nb_meas):
     """ Estimates values of projector operators PP = P
     >> return estimated values PxSxR array of estimated frequencies 
@@ -264,14 +343,13 @@ def estimate_op_bin(list_bin, list_states, nb_meas):
     estim = 2*freq-1
     return np.squeeze(estim)    
 
-def estimate_op_herm(list_bin, list_states, nb_meas):
-    """ Estimates values of gen herm operators H = \sum lambda |lambda><lambda|
-    """
-    pass
+
 
 # qtip wrapper functions
 def get_exp_val(op, state, assert_real=True):
-    """ get the expected value of an operator given a state. Deal with the case 
+    """ 
+    TODO: depreciate as it is already provided in qutip
+    get the expected value of an operator given a state. Deal with the case 
     it is represented as a vector or density matrix
     if assert_real = True, verify that the expected values are real and return 
         them as real (behavior expected for Hermitian operators)
@@ -282,6 +360,9 @@ def get_exp_val(op, state, assert_real=True):
         exp = (op.dag() * state).tr()
     if assert_real: exp = assert_and_recast_to_real(exp)
     return exp
+
+
+
 
 #======================#
 # Utilities
