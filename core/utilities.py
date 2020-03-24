@@ -35,7 +35,7 @@ class BackendManager():
     """
     def __init__(self):
         provider_free = qk.IBMQ.load_account()
-        if 'kiran' in os.getcwd():
+        if 'kiran' in os.getcwd() or 'kkhosla' in os.getcwd():
             self.LIST_OF_DEVICES = FULL_LIST_DEVICES
             provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
             self.provider_list = {'free':provider_free, 'imperial':provider_imperial}

@@ -100,34 +100,34 @@ if x_sol is not None:
     assert cost1(x_sol) == 1., "pb with ansatz/x_sol"
     assert cost2(x_sol) == 1., "pb with ansatz/x_sol"
 
-# ===================
-# BO Optim: no noise / Use of fidelity
-# 20/25 works
-#EPS = np.pi/2
-#DOMAIN_RED = [(x-EPS, x+EPS) for x in X_SOL]
-# ===================
-# setup
-NB_INIT = 50
-NB_ITER = 50
-DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
-DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-bo_args = ut.gen_default_argsbo()
-bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
-cost_bo = lambda x: 1-fid(x) 
+# # ===================
+# # BO Optim: no noise / Use of fidelity
+# # 20/25 works
+# #EPS = np.pi/2
+# #DOMAIN_RED = [(x-EPS, x+EPS) for x in X_SOL]
+# # ===================
+# # setup
+# NB_INIT = 50
+# NB_ITER = 50
+# DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
+# DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
+# bo_args = ut.gen_default_argsbo()
+# bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
+# cost_bo = lambda x: 1-fid(x) 
 
-#optim
-Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
-print("start optim")
-Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
+# #optim
+# Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
+# print("start optim")
+# Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 
-# Results found
-(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-fid_test(x_seen)
-fid_test(x_exp)
-print(Bopt.model.model)
-Bopt.plot_convergence()
+# # Results found
+# (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
+# fid_test(x_seen)
+# fid_test(x_exp)
+# print(Bopt.model.model)
+# Bopt.plot_convergence()
 
-fid_test(x_sol)
+# fid_test(x_sol)
 
 
 # ===================
@@ -155,52 +155,59 @@ fid_test(x_exp)
 print(Bopt.model.model)
 Bopt.plot_convergence()
 
-# ===================
-# BO Optim
-# No noise / Cost Function 2 
-# seems to work better with this split 30/70 not so much with 50/50 and more 
-# exploration
-# ===================
-# setup
-NB_INIT = 30
-NB_ITER = 70
-DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
-DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-bo_args = ut.gen_default_argsbo()
-bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT, 
-                'acquisition_weight': 6})
-cost_bo = lambda x: 1-cost2(x) 
+# # ===================
+# # BO Optim
+# # No noise / Cost Function 2 
+# # seems to work better with this split 30/70 not so much with 50/50 and more 
+# # exploration
+# # ===================
+# # setup
+# NB_INIT = 30
+# NB_ITER = 70
+# DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
+# DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
+# bo_args = ut.gen_default_argsbo()
+# bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT, 
+#                 'acquisition_weight': 6})
+# cost_bo = lambda x: 1-cost2(x) 
 
-#optim
-Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
-print("start optim")
-Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
+# #optim
+# Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
+# print("start optim")
+# Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 
-# Results found
-(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-fid_test(x_seen)
-fid_test(x_exp)
-print(Bopt.model.model)
-Bopt.plot_convergence()
+# # Results found
+# (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
+# fid_test(x_seen)
+# fid_test(x_exp)
+# print(Bopt.model.model)
+# Bopt.plot_convergence()
 
 
 
 ## ===================
 ## Get a baseline to compare to BO
 ## ===================
-#
-#x_opt_guess =  np.array([3., 3., 2., 3., 3., 1.]) * np.pi/2
-#x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
-#
-#baseline_values = [qc.F(x_opt_guess) for ii in range(10)]
-#bopt_values = [qc.F(x_opt_pred) for ii in range(10)]
-#
-#
-#
-#
-#res_to_dill = gen_res(Bopt)
-#dict_to_dill = {'Bopt_results':res_to_dill, 
-#                'F_Baseline':baseline_values, 
-#                'F_Bopt':bopt_values,
-#                'Circ':qc.MAIN_CIRC[0],
-#                'Device_config':qc.params_to_dict()}
+
+x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
+
+baseline_values = [cost1(x_sol) for ii in range(10)]
+bopt_values = [cost1(x_opt_pred) for ii in range(10)]
+
+
+
+
+res_to_dill = ut.gen_res(Bopt)
+dict_to_dill = {'Bopt_results':res_to_dill, 
+                'F_Baseline':baseline_values, 
+                'F_Bopt':bopt_values,
+                'Circ':cost1._main_circuit}
+
+import dill
+
+file_name = '_res_singalpore_6cyc_Witness1.pkl'                                                                                                                                                                                                        
+with open(file_name, 'wb') as f:                                                                                                                                                                                                          
+    dill.dump(dict_to_dill, f)                                                                                                                                                                                                            
+
+with open(file_name, 'rb') as f:                                                                                                                                                                                                          
+    data_retrieved = dill.load(f)
