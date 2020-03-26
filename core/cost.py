@@ -95,20 +95,28 @@ class Cost():
     def __call__(self, params, debug=False):
         """ Estimate the CostFunction for some parameters"""
         if debug: pdb.set_trace()
-        if np.ndim(params) > 1 :
-            res = np.array([self.__call__(p) for p in params])
+        if np.ndim(params) == 1:
+            is_1d = True
+            params = [params]
         else:
-            #bind the values of the parameters to the circuit
-            bound_circs = bind_params(self._main_circuit, params, self._qk_vars)
-            
-            #See if one can add a noise model here and the number of parameters
-            results = self.instance.execute(bound_circs, had_transpiled=self.fix_transpile)
-            
-            if self._keep_res: self._res.append(results.to_dict())
-            counts = [results.get_counts(ii) for ii in range(len(self._list_meas))]
-            res = self._meas_func(counts)    
-            if self.verbose: print(res)
-        return np.squeeze(res) 
+            is_1d = False
+        nb_setparams = len(params) #number of distinct sets of parameters
+        nb_meas = len(self._list_meas) #number of meas taken per set of parameters
+        
+        bound_circs = []
+        for p in params:
+            bound_circs += bind_params(self._main_circuit, p, self._qk_vars)
+        
+        results = self.instance.execute(bound_circs, 
+                                        had_transpiled=self.fix_transpile)
+        if self._keep_res: self._res.append(results.to_dict())
+        counts = [[results.get_counts(np*nb_meas+nc) for nc in range(nb_meas)] 
+                      for np in range(nb_setparams)]
+        res = np.array([self._meas_func(c) for c in counts]) 
+        if is_1d: res = np.squeeze(res)
+        else: res = res[:,np.newaxis]
+        if self.verbose: print(res)
+        return res 
     
     def _transpile_measurable_circuits(self, params):
         """ Transpile all the measurable circuits"""
@@ -117,7 +125,7 @@ class Cost():
         meas_settings = self._list_meas
         list_circ_meas = gen_meas_circuits(ansatz, meas_settings, params)
         self._main_circuit = instance.transpile(list_circ_meas)
-        print('Measuremable circuits have been transpiled')
+        print('Measurable circuits have been transpiled')
 
     def _gen_qk_vars(self):
         """ Generate qiskit variables to be bound to a circuit"""

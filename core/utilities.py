@@ -24,7 +24,9 @@ FULL_LIST_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore',
 # There may be more free devices
 FREE_LIST_DEVICES = ['ibmq_16_melbourne', 'ibmq_vigo', 'qasm_simulator']
 
-
+# ------------------------------------------------------
+# Back end management related utilities
+# ------------------------------------------------------
 class BackendManager():
     """ Custom backend manager to deal with different users
     self.LIST_DEVICES : list of devices accessible to the user
@@ -86,7 +88,8 @@ class BackendManager():
             print(ct+1, ':   ', ba.status()) # print status
 
     def gen_instance_from_current(self, nb_shots = NB_SHOTS_DEFAULT, 
-                     optim_lvl = OPTIMIZATION_LEVEL_DEFAULT):
+                     optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
+                     noise_model = None):
         """ Generate an instance from the current backend
         Not sure this is needed here: 
             + maybe building an instance should be decided in the main_script
@@ -95,7 +98,7 @@ class BackendManager():
               dealt with transpile, compile
         """
         instance = qk.aqua.QuantumInstance(self.current_backend, shots=nb_shots,
-                            optimization_level=optim_lvl)
+                            optimization_level=optim_lvl, noise_model= noise_model)
         print('Generated a new quantum instance')
         return instance
 
@@ -106,18 +109,22 @@ class BackendManager():
         noise_model = noise.device.basic_device_noise_model(properties)
         return noise_model
 
-
+# ------------------------------------------------------
 # BO related utilities
+# ------------------------------------------------------
 def add_path_GPyOpt():
     sys.path.insert(0, get_path_GPyOpt())
             
 def get_path_GPyOpt():
     """ Generate the path where the package GPyOpt should be found, 
     this is custom to the user/machine
-    it has been forked from https://github.com/FredericSauv/GPyOpt
+    GPyOpt version is from the  fork https://github.com/FredericSauv/GPyOpt
     """
     if 'fred' in os.getcwd(): 
-        path = '/home/fred/Desktop/GPyOpt/'
+        if 'GIT' in os.getcwd():
+            path = '/home/fred/Desktop/WORK/GIT/GPyOpt'
+        else:
+            path = '/home/fred/Desktop/GPyOpt/'
     elif 'level12' in socket.gethostname():
         path = '/home/kiran/QuantumOptimization/GPyOpt/'
     elif 'Lambda' in socket.gethostname():
@@ -128,7 +135,7 @@ def get_path_GPyOpt():
 
 def get_best_from_bo(bo):
     """ Extract from a BO object the best set of parameters and fom
-    based both from observed data and model"""
+    based on from observed data and model"""
     x_obs = bo.x_opt
     y_obs = bo.fx_opt 
     pred = bo.model.predict(bo.X, with_noise=False)[0]
@@ -149,9 +156,9 @@ def gen_res(bo):
            'gp_params_names':bo.model.model.parameter_names()}
     return res
 
-def gen_default_argsbo():
+def gen_default_argsbo(f, domain, nb_init, eval_init=True):
     """ maybe unnecessary"""
-    default_args = {'initial_design_numdata':20,
+    default_args = {
            'model_update_interval':1, 
            'hp_update_interval':5, 
            'acquisition_type':'LCB', 
@@ -161,8 +168,25 @@ def gen_default_argsbo():
            'optimize_restarts':1, 
            'optim_num_samples':10000, 
            'ARD':False}
+    
+    domain_bo = [{'name': str(i), 'type': 'continuous', 'domain': d} 
+                 for i, d in enumerate(domain)]
+    # Generate random x uniformly (could implement other randomness)
+    x_init = np.transpose([np.random.uniform(*d, size = nb_init) for d in domain])
+    if eval_init:
+        y_init = f(x_init)
+        numdata_init=None
+    else:
+        y_init = None
+        numdata_init = nb_init
+        
+    default_args.update({'f':f, 'domain':domain_bo, 'X':x_init, 'Y':y_init,
+                         'initial_design_numdata': numdata_init})
+
     return default_args
 
+
+    
 
 
 # Generate noise models
