@@ -32,7 +32,7 @@ class Cost():
           an estimate of the cost
         + how should be the full(ansatz+measurements) circuit generated and 
           transpiled
-        + what results to keep 
+        
     
     Logic of computing the cost are defined by the followings (which are not
     implement in the base class but should be implemented in the subclasses):
@@ -50,12 +50,16 @@ class Cost():
         + keep_res 
           ++ if True the results from the execution of the circuits are kept 
              (appended) in self._res
+        + shot_noise
+          ++ added to see shot noise to better estimate difference in results (maybe this is overkill)
                     
     Questions: 
-        + should we pass backend or instance
+        + should we pass backend or instance? 
+            ANS: I think instancs is better
         + Do we need to pass the number of shots in the instance when transpiling or can they 
         be specified at exec time
     append_measurements
+            ANS: I suggest not worry for now and assume qiskit will introduce this functionality soon
     
     Terminology:
         + ansatz: callable function (may be a callable object in the future) 
@@ -123,7 +127,7 @@ class Cost():
         """ Generate qiskit variables to be bound to a circuit"""
         name_params = ['R'+str(i) for i in range(self.nb_params)]
         self._qk_vars = [qk.circuit.Parameter(n) for n in name_params]
-        
+                
     def _init_res(self):
         """ Flush the res accumulated so far """
         self._res = []
@@ -136,6 +140,20 @@ class Cost():
         """ To be implemented in the subclasses """
         raise NotImplementedError()
 
+    def shot_noise(self, params, nb_shots=8):
+        """ Sends a single job that is 10 times to see shot noise. Decided to 
+        run it like this for efficience on the actual device"""
+        # Bind params as usual and make long list and excecute whole job
+        bound_circs = bind_params(self._main_circuit, params, self._qk_vars)
+        bound_circs = bound_circs*nb_shots
+        results = self.instance.execute(bound_circs, had_transpiled=self.fix_transpile)
+
+        # Don't bother keeping all results - just cost function evaluations
+        counts = [results.get_counts(ii) for ii in range(nb_shots*len(self._list_meas))]
+        call_vec = []
+        for ii in range(0, len(self._list_meas)*nb_shots, len(self._list_meas)):
+            call_vec.append(self._meas_func(counts[ii:(ii+len(self._list_meas))]))
+        return call_vec
     
 
 # Subclasses: GHZ related costs

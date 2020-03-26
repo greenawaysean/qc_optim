@@ -95,7 +95,7 @@ cost2 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_pa
 cost1 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 
 
-if x_sol is not None:
+if x_sol is not None and bem.current_backend == 'qasm_simulator':
     assert fid_test(x_sol) == 1., "pb with ansatz/x_sol"
     assert cost1(x_sol) == 1., "pb with ansatz/x_sol"
     assert cost2(x_sol) == 1., "pb with ansatz/x_sol"
@@ -136,7 +136,7 @@ if x_sol is not None:
 # ===================
 # setup
 NB_INIT = 50
-NB_ITER = 50
+NB_ITER = 100
 DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
 bo_args = ut.gen_default_argsbo()
@@ -186,28 +186,15 @@ Bopt.plot_convergence()
 
 
 ## ===================
-## Get a baseline to compare to BO
+## Get a baseline to compare to BO and save result
 ## ===================
 
 x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
 
-baseline_values = [cost1(x_sol) for ii in range(10)]
-bopt_values = [cost1(x_opt_pred) for ii in range(10)]
+baseline_values = cost1.shot_noise(x_sol, 10)
+bopt_values = cost1.shot_noise(x_opt_pred, 10)
 
 
-
-
-res_to_dill = ut.gen_res(Bopt)
-dict_to_dill = {'Bopt_results':res_to_dill, 
-                'F_Baseline':baseline_values, 
-                'F_Bopt':bopt_values,
-                'Circ':cost1._main_circuit}
-
-import dill
-
-file_name = '_res_singalpore_6cyc_Witness1.pkl'                                                                                                                                                                                                        
-with open(file_name, 'wb') as f:                                                                                                                                                                                                          
-    dill.dump(dict_to_dill, f)                                                                                                                                                                                                            
-
-with open(file_name, 'rb') as f:                                                                                                                                                                                                          
-    data_retrieved = dill.load(f)
+ut.gen_pkl_file(cost1, Bopt, 
+                baseline_values = baseline_values, 
+                bopt_values = bopt_values)

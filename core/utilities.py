@@ -7,6 +7,7 @@ Created on Tue Mar  3 17:27:19 2020
 Miscellaneous utilities (may be split at some point):
     ++ Management of backends (custom for various users)
     ++ GPyOpt related functions
+    ++ Manages saving optimizer results
     
     
 """
@@ -16,6 +17,9 @@ from qiskit.providers.aer.noise.errors import ReadoutError
 import qiskit as qk
 import numpy as np
 import os, socket, sys
+import dill
+import string
+import random
 
 NB_SHOTS_DEFAULT = 256
 OPTIMIZATION_LEVEL_DEFAULT = 3
@@ -35,7 +39,7 @@ class BackendManager():
     """
     def __init__(self):
         provider_free = qk.IBMQ.load_account()
-        if 'kiran' in os.getcwd() or 'kkhosla' in os.getcwd():
+        if 'kkhosla' in os.getcwd():
             self.LIST_OF_DEVICES = FULL_LIST_DEVICES
             provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
             self.provider_list = {'free':provider_free, 'imperial':provider_imperial}
@@ -59,6 +63,7 @@ class BackendManager():
         except:
             pass
 
+    # backend related utilities
     def get_backend(self, name, inplace=False):
         """ Gets back end preferencing the IMPERIAL provider
         Can pass in a named string or number corresponding to get_current_status output
@@ -173,4 +178,32 @@ def gen_ro_noisemodel(err_proba = [[0.1, 0.1],[0.1,0.1]], qubits=[0,1]):
         noise.add_readout_error(ReadoutError(err), [q])
     return noise_model
 
+
+# Save data from the cost fucntion and opt
+def gen_pkl_file(cost,
+                 Bopt,
+                 baseline_values = None, 
+                 bopt_values = None,
+                 file_name = None,
+                 dict_in = None):
+    """ Streamlines save"""
+    
+    if file_name is None:
+        file_name = '_res_' + cost.instance.backend.name() 
+        file_name += '_' + str(cost.__class__).split('.')[1].split("'")[0] + '_'
+        file_name += ''.join([random.choice(string.ascii_letters) for ii in range(3)])
+        file_name += '.pkl'
+
+    
+    res_to_dill = gen_res(Bopt)
+    dict_to_dill = {'Bopt_results':res_to_dill, 
+                    'F_Baseline':baseline_values, 
+                    'F_Bopt':bopt_values,
+                    'Circ':cost._main_circuit,
+                    'Ansatz':cost.ansatz,
+                    'Meta':cost._res,
+                    'Other':dict_in}
+
+    with open(file_name, 'wb') as f:                                                                                                                                                                                                          
+        dill.dump(dict_to_dill, f)                                                                                                                                                                                                            
 
