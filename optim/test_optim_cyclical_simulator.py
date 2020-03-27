@@ -159,7 +159,6 @@ Bopt.plot_convergence()
 
 # ===================
 # 1.c BO Optim No noise (except sampling) + cost Function 2 
-# (Best one so far)
 # ===================
 # setup
 NB_INIT = 50
@@ -205,7 +204,8 @@ Bopt.plot_convergence()
 
 # ===================
 # 2.b.  BO Optim with NOISY SIMULATORS + Cost1
-# FAST BUT NOT THAT GOOD
+# Exploration (acquisition weight)
+# FAST 98-99% Fidelity test
 # ===================
 # setup
 NB_INIT = 50
@@ -238,7 +238,7 @@ NB_ITER = 50
 DOMAIN = [(0, 2*np.pi) for i in range(nb_p)]
 cost_bo = lambda x: 1-cost2_noisy(x)
 bo_args = ut.gen_default_argsbo(f=cost_bo, domain=DOMAIN, nb_init=NB_INIT)
-bo_args.update({'acquisition_weight': 7})
+#bo_args.update({'acquisition_weight': 7})
 
 #optim
 Bopt = GPyOpt.methods.BayesianOptimization(**bo_args)    
