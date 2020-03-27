@@ -91,8 +91,8 @@ ansatz, nb_p, nb_q, x_sol = pb_infos[0]
 # different cost functions 
 fid = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 fid_test = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst_test, N=nb_q, nb_params=nb_p)
-cost2 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
-cost1 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
+cost2 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
+cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 
 
 if x_sol is not None and bem.current_backend == 'qasm_simulator':
@@ -136,15 +136,15 @@ if x_sol is not None and bem.current_backend == 'qasm_simulator':
 # ===================
 # setup
 NB_INIT = 50
-NB_ITER = 100
+NB_ITER = 80
 DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-bo_args = ut.gen_default_argsbo()
-bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
-cost_bo = lambda x: 1-cost1(x) 
+cost_bo = lambda x: 1-cost2(x) 
+bo_args = ut.gen_default_argsbo(f=cost_bo, domain=DOMAIN_FULL, nb_init=NB_INIT)
+bo_args.update({'acquisition_weight': 7}) # increase exploration
 
 #optim
-Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
+Bopt = GPyOpt.methods.BayesianOptimization(**bo_args)    
 print("start optim")
 Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 
@@ -197,4 +197,5 @@ bopt_values = cost1.shot_noise(x_opt_pred, 10)
 
 ut.gen_pkl_file(cost1, Bopt, 
                 baseline_values = baseline_values, 
-                bopt_values = bopt_values)
+                bopt_values = bopt_values, 
+                dict_in = {'bo_args':bo_args})

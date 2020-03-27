@@ -148,20 +148,11 @@ class Cost():
         """ To be implemented in the subclasses """
         raise NotImplementedError()
 
-    def shot_noise(self, params, nb_shots=8):
-        """ Sends a single job that is 10 times to see shot noise. Decided to 
-        run it like this for efficience on the actual device"""
-        # Bind params as usual and make long list and excecute whole job
-        bound_circs = bind_params(self._main_circuit, params, self._qk_vars)
-        bound_circs = bound_circs*nb_shots
-        results = self.instance.execute(bound_circs, had_transpiled=self.fix_transpile)
-
-        # Don't bother keeping all results - just cost function evaluations
-        counts = [results.get_counts(ii) for ii in range(nb_shots*len(self._list_meas))]
-        call_vec = []
-        for ii in range(0, len(self._list_meas)*nb_shots, len(self._list_meas)):
-            call_vec.append(self._meas_func(counts[ii:(ii+len(self._list_meas))]))
-        return call_vec
+    def shot_noise(self, params, nb_experiments=8):
+        """ Sends a single job that is 8 times to see shot noise."""        
+        params = [params for ii in range(nb_experiments)]
+        return self.__call__(params)
+       
     
 
 # Subclasses: GHZ related costs
