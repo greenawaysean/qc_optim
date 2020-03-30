@@ -94,6 +94,8 @@ fid_test = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst_test, N=nb_q, 
 cost2 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 
+cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
+
 
 if x_sol is not None and bem.current_backend == 'qasm_simulator':
     assert fid_test(x_sol) == 1., "pb with ansatz/x_sol"
@@ -139,7 +141,7 @@ NB_INIT = 50
 NB_ITER = 80
 DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-cost_bo = lambda x: 1-cost2(x) 
+cost_bo = lambda x: 1-cost_cost(x) 
 bo_args = ut.gen_default_argsbo(f=cost_bo, domain=DOMAIN_FULL, nb_init=NB_INIT)
 bo_args.update({'acquisition_weight': 7}) # increase exploration
 

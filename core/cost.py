@@ -71,7 +71,7 @@ class Cost():
 
     def __init__(self, ansatz, N,  instance, nb_params, fix_transpile = True,
                   keep_res = True, verbose = True, noise_model = None,
-                  debug=False, **args):
+                  debug = False, max_job_size = 900, **args):
         """ initialize the cost function taking as input parameters:
             + ansatz 
             + N <int>: the number of qubits
@@ -87,6 +87,7 @@ class Cost():
         self.verbose = verbose
         self._keep_res = keep_res
         self._res = []
+        self._max_job_size = max_job_size
 
         # These methods needs to be implemented in the subclasses
         self._list_meas = self._gen_list_meas()  
@@ -97,25 +98,40 @@ class Cost():
         self._transpile_measurable_circuits(self._qk_vars)
     
     def __call__(self, params, debug=False):
-        """ Estimate the CostFunction for some parameters"""
+        """ Estimate the CostFunction for some parameters - Has a known buy:
+            if number of measurement settings > max_job_size """
         if debug: pdb.set_trace()
         if np.ndim(params) == 1:
             is_1d = True
             params = [params]
         else:
             is_1d = False
-        nb_setparams = len(params) #number of distinct sets of parameters
+        # 
         nb_meas = len(self._list_meas) #number of meas taken per set of parameters
         
         bound_circs = []
         for p in params:
             bound_circs += bind_params(self._main_circuit, p, self._qk_vars)
         
-        results = self.instance.execute(bound_circs, 
-                                        had_transpiled=self.fix_transpile)
-        if self._keep_res: self._res.append(results.to_dict())
-        counts = [[results.get_counts(np*nb_meas+nc) for nc in range(nb_meas)] 
-                      for np in range(nb_setparams)]
+        settings_per_job = int(np.floor(self._max_job_size / nb_meas))
+        counts = []
+        while len(bound_circs) > 0:
+            this_job_circs = min(settings_per_job * nb_meas, len(bound_circs))
+            nb_setparams = int(this_job_circs / nb_meas)
+            this_job = bound_circs[:this_job_circs]
+            bound_circs[:this_job_circs] = []
+            if settings_per_job < 1: print('WARNING results may not be calculated correctly')
+            
+            results = self.instance.execute(this_job, 
+                                            had_transpiled=self.fix_transpile)
+
+            if self._keep_res: self._res.append(results.to_dict())
+            
+            this_job_counts = [[results.get_counts(np*nb_meas+nc) 
+                                for nc in range(nb_meas)] 
+                                for np in range(nb_setparams)]
+            counts+=this_job_counts
+            
         res = np.array([self._meas_func(c) for c in counts]) 
         if is_1d: res = np.squeeze(res)
         else: res = res[:,np.newaxis]
