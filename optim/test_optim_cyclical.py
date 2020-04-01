@@ -97,6 +97,7 @@ cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_pa
 cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
 
 
+
 if x_sol is not None and bem.current_backend == 'qasm_simulator':
     assert fid_test(x_sol) == 1., "pb with ansatz/x_sol"
     assert cost1(x_sol) == 1., "pb with ansatz/x_sol"

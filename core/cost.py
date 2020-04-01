@@ -180,6 +180,7 @@ class Cost():
         ref = self._main_circuit[-1]
         test = [compare_circuits(ref, c) for c in self._main_circuit[:-1]]
         return np.all(test)
+
     
     def compare_layout(self, cost2, verbose=True):
         """ Draft, goal compare transpiled circuits (self._maincircuit)
@@ -192,6 +193,17 @@ class Cost():
         test3 = np.all([compare_circuits(ref, c) for c in cost2._main_circuit[:-1]])
         if verbose: print("self and cost2: same layout - {}".format(test3))
         return test1 * test2 *test3
+
+    def check_depth(self, draw_to_screen = False):
+        check1 = self.check_layout()
+        if not check1:
+            print('Circuits are not on the same qubits')
+            return False
+        depth = [self._main_circuit[ii].depth() for ii in range(len(self._gen_list_meas()))]
+        test1 = min(depth) == max(depth)
+        return test1
+            
+        
 
 def compare_circuits(circ1, circ2):
     """ Draft, define a list of checks to compare transpiled circuits
