@@ -102,6 +102,55 @@ if x_sol is not None and bem.current_backend == 'qasm_simulator':
     assert cost1(x_sol) == 1., "pb with ansatz/x_sol"
     assert cost2(x_sol) == 1., "pb with ansatz/x_sol"
 
+
+# ===================
+# BO Optim
+# Cost function defined by cost_cost
+# ===================
+# setup
+    
+print('''Warning: this assumes cost_cost is the default cost_function from here on''')
+NB_INIT = 50
+NB_ITER = 80
+DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
+DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
+cost_bo = lambda x: 1-cost_cost(x) 
+bo_args = ut.gen_default_argsbo(f=cost_bo, domain=DOMAIN_FULL, nb_init=NB_INIT)
+bo_args.update({'acquisition_weight': 7}) # increase exploration
+
+#optim
+Bopt = GPyOpt.methods.BayesianOptimization(**bo_args)    
+print("start optim")
+Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
+
+# Results found
+(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
+fid_test(x_seen)
+fid_test(x_exp)
+print(Bopt.model.model)
+Bopt.plot_convergence()
+
+
+
+
+
+## ===================
+## Get a baseline to compare to BO and save result
+## ===================
+
+x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
+
+baseline_values = cost_cost.shot_noise(x_sol, 10)
+bopt_values = cost_cost.shot_noise(x_opt_pred, 10)
+
+
+ut.gen_pkl_file(cost_cost, Bopt, 
+                baseline_values = baseline_values, 
+                bopt_values = bopt_values, 
+                dict_in = {'bo_args':bo_args})
+
+
+
 # # ===================
 # # BO Optim: no noise / Use of fidelity
 # # 20/25 works
@@ -131,32 +180,6 @@ if x_sol is not None and bem.current_backend == 'qasm_simulator':
 
 # fid_test(x_sol)
 
-
-# ===================
-# BO Optim
-# Cost function 1 (Best one so far)
-# ===================
-# setup
-NB_INIT = 50
-NB_ITER = 80
-DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
-DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-cost_bo = lambda x: 1-cost_cost(x) 
-bo_args = ut.gen_default_argsbo(f=cost_bo, domain=DOMAIN_FULL, nb_init=NB_INIT)
-bo_args.update({'acquisition_weight': 7}) # increase exploration
-
-#optim
-Bopt = GPyOpt.methods.BayesianOptimization(**bo_args)    
-print("start optim")
-Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
-
-# Results found
-(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-fid_test(x_seen)
-fid_test(x_exp)
-print(Bopt.model.model)
-Bopt.plot_convergence()
-
 # # ===================
 # # BO Optim
 # # No noise / Cost Function 2 
@@ -184,20 +207,3 @@ Bopt.plot_convergence()
 # fid_test(x_exp)
 # print(Bopt.model.model)
 # Bopt.plot_convergence()
-
-
-
-## ===================
-## Get a baseline to compare to BO and save result
-## ===================
-
-x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
-
-baseline_values = cost1.shot_noise(x_sol, 10)
-bopt_values = cost1.shot_noise(x_opt_pred, 10)
-
-
-ut.gen_pkl_file(cost1, Bopt, 
-                baseline_values = baseline_values, 
-                bopt_values = bopt_values, 
-                dict_in = {'bo_args':bo_args})

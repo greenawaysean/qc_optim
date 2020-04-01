@@ -26,7 +26,14 @@ OPTIMIZATION_LEVEL_DEFAULT = 3
 FULL_LIST_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore', 
              'ibmq_rochester', 'qasm_simulator']
 # There may be more free devices
-FREE_LIST_DEVICES = ['ibmq_16_melbourne', 'ibmq_vigo', 'qasm_simulator']
+FREE_LIST_DEVICES = ['ibmq_16_melbourne', 
+                     'ibmq_vigo', 
+                     'ibmq_armonk',
+                     'ibmq_burlington',
+                     'ibmq_essex',
+                     'ibmq_london',
+                     'ibmq_ourense',
+                     'qasm_simulator']
 
 # ------------------------------------------------------
 # Back end management related utilities
