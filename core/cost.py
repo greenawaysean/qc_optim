@@ -582,6 +582,7 @@ def gen_meas_circuits(ansatz, meas_settings, params, logical_qubits=None):
         c_list = [append_measurements(copy.deepcopy(ansatz), m, logical_qubits) 
                   for m in meas_settings]    
     else:
+        len(ansatz(params))
         c_list = [append_measurements(ansatz(params), m) 
                   for m in meas_settings]
     return c_list

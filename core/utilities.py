@@ -101,16 +101,27 @@ class BackendManager():
 
     def gen_instance_from_current(self, nb_shots = NB_SHOTS_DEFAULT, 
                      optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
-                     noise_model = None):
+                     noise_model = None, 
+                     initial_layout=None):
         """ Generate an instance from the current backend
         Not sure this is needed here: 
             + maybe building an instance should be decided in the main_script
             + maybe it should be done in the cost function
             + maybe there is no need for an instance and everything can be 
               dealt with transpile, compile
+            
+            ++ I've given the option to just spesify the gate order as intiial layout here
+                however this depends on NB_qubits, so it more natural in the cost function
+                but it has to be spesified for the instance here??? Don't know the best
+                way forward. 
         """
+        if type(initial_layout) == list:
+            nb_qubits = len(initial_layout)
+            logical_qubits = qk.QuantumRegister(nb_qubits, 'logicals')  
+            initial_layout = {logical_qubits[ii]:initial_layout[ii] for ii in range(nb_qubits)}
         instance = qk.aqua.QuantumInstance(self.current_backend, shots=nb_shots,
-                            optimization_level=optim_lvl, noise_model= noise_model)
+                            optimization_level=optim_lvl, noise_model= noise_model,
+                            initial_layout=initial_layout)
         print('Generated a new quantum instance')
         return instance
 

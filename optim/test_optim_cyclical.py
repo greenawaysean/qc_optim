@@ -17,7 +17,8 @@ import GPyOpt
 import copy
 
 NB_SHOTS_DEFAULT = 8192
-OPTIMIZATION_LEVEL_DEFAULT = 3
+OPTIMIZATION_LEVEL_DEFAULT = 1
+SINGAPORE_GATE_MAP = [1,2,3,6,7,8] # Maybe put this in bem
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
@@ -26,7 +27,8 @@ bem.get_current_status()
 chosen_device = int(input('SELECT IBM DEVICE:'))
 bem.get_backend(chosen_device, inplace=True)
 inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
-                                     optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
+                                     optim_lvl=OPTIMIZATION_LEVEL_DEFAULT,
+                                     initial_layout=SINGAPORE_GATE_MAP)
 inst_test = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
                                      optim_lvl=1)
 
@@ -34,7 +36,7 @@ inst_test = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT,
 # Define ansatz and initialize costfunction
 # Todo: generalize to abitrary nb of qubits
 # ===================
-def ansatz_easy(params):         
+def ansatz_easy(params):        
     """ Ansatz for which an ideal solution exist"""
     logical_qubits = qk.QuantumRegister(6, 'logicals')
     c = qk.QuantumCircuit(logical_qubits)
@@ -54,7 +56,8 @@ def ansatz_easy(params):
     c.cu1(np.pi,5,0)
     c.barrier()
     return c
-    
+
+
 
 def ansatz_hard(params):
     """ Ansatz to be refined"""
@@ -82,6 +85,7 @@ def ansatz_hard(params):
     c.rx(params[11], 5)
     c.barrier()
     return c
+
 
 ### (ansatz, nb_params, nb_qubits, sol)
 pb_infos = [(ansatz_easy, 6, 6, np.pi/2 * np.ones(shape=(6,))),
