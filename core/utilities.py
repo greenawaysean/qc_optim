@@ -107,11 +107,13 @@ class BackendManager():
         print('Generated a new quantum instance')
         return instance
 
-    def gen_noise_model_from_backend(self, name_backend='ibmq_essex'):
+    def gen_noise_model_from_backend(self, name_backend='ibmq_essex', 
+                                     readout_error=True, gate_error=True):
         """ Given a backend name (or int) return the noise model associated"""
         backend = self.get_backend(name_backend)
         properties = backend.properties()
-        noise_model = noise.device.basic_device_noise_model(properties)
+        noise_model = noise.device.basic_device_noise_model(properties, 
+                            readout_error=readout_error, gate_error=gate_error)
         return noise_model
 
 # ------------------------------------------------------
