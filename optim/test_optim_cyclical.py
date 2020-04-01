@@ -18,7 +18,7 @@ import copy
 
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 1
-SINGAPORE_GATE_MAP = [1,2,3,6,7,8] # Maybe put this in bem
+SINGAPORE_GATE_MAP = [1,2,3,8,7,6] # Maybe put this in bem
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
@@ -36,7 +36,7 @@ inst_test = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT,
 # Define ansatz and initialize costfunction
 # Todo: generalize to abitrary nb of qubits
 # ===================
-def ansatz_easy(params):        
+def ansatz_easy(params, barriers = False):        
     """ Ansatz for which an ideal solution exist"""
     logical_qubits = qk.QuantumRegister(6, 'logicals')
     c = qk.QuantumCircuit(logical_qubits)
@@ -46,15 +46,15 @@ def ansatz_easy(params):
     c.ry(params[3],3)
     c.ry(params[4],4)
     c.ry(params[5],5)
-    c.barrier()
+    if barriers: c.barrier()
     c.cu1(np.pi,0,1)
     c.cu1(np.pi,2,3)
     c.cu1(np.pi,4,5)
-    c.barrier()
+    if barriers: c.barrier()
     c.cu1(np.pi,1,2)
     c.cu1(np.pi,3,4)
     c.cu1(np.pi,5,0)
-    c.barrier()
+    if barriers: c.barrier()
     return c
 
 
