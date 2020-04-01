@@ -14,6 +14,7 @@ import utilities as ut
 import cost as cost
 ut.add_path_GPyOpt()
 import GPyOpt
+import copy
 
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 3
@@ -26,8 +27,8 @@ chosen_device = int(input('SELECT IBM DEVICE:'))
 bem.get_backend(chosen_device, inplace=True)
 inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
                                      optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
-inst_test = bem.gen_instance_from_current(nb_shots=8192, 
-                                     optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
+inst_test = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
+                                     optim_lvl=1)
 
 # ===================
 # Define ansatz and initialize costfunction
@@ -35,9 +36,8 @@ inst_test = bem.gen_instance_from_current(nb_shots=8192,
 # ===================
 def ansatz_easy(params):         
     """ Ansatz for which an ideal solution exist"""
-    c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(1, 'b'),
-                          qk.QuantumRegister(1,'c'),qk.QuantumRegister(1,'d'),
-                          qk.QuantumRegister(1,'e'),qk.QuantumRegister(1,'f'))
+    logical_qubits = qk.QuantumRegister(6, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
     c.ry(params[0],0)
     c.ry(params[1],1)
     c.ry(params[2],2)
@@ -55,11 +55,11 @@ def ansatz_easy(params):
     c.barrier()
     return c
     
+
 def ansatz_hard(params):
     """ Ansatz to be refined"""
-    c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(1, 'b'),
-                          qk.QuantumRegister(1,'c'),qk.QuantumRegister(1,'d'),
-                          qk.QuantumRegister(1,'e'),qk.QuantumRegister(1,'f'))
+    logical_qubits = qk.QuantumRegister(6, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
     c.ry(params[0],0)
     c.ry(params[1],1)
     c.ry(params[2],2)
@@ -89,26 +89,46 @@ pb_infos = [(ansatz_easy, 6, 6, np.pi/2 * np.ones(shape=(6,))),
 ansatz, nb_p, nb_q, x_sol = pb_infos[0]
 
 # different cost functions 
-fid = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
-fid_test = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst_test, N=nb_q, nb_params=nb_p)
-cost2 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
-cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
+# fid = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
+# fid_test = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst_test, N=nb_q, nb_params=nb_p)
+# cost2 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
+# cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 
 cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
 
 
+if bem.current_backend.name() != 'qasm_simulator':
+    ansatz_transpiled = copy.deepcopy(cost_cost._main_circuit[0])
+    #cost_transpiled = cost.GraphCyclPauliCost(ansatz=ansatz_transpiled, 
+    #                                      N=nb_q, instance=inst_test, nb_params=nb_p)
 
-if x_sol is not None and bem.current_backend == 'qasm_simulator':
-    assert fid_test(x_sol) == 1., "pb with ansatz/x_sol"
-    assert cost1(x_sol) == 1., "pb with ansatz/x_sol"
-    assert cost2(x_sol) == 1., "pb with ansatz/x_sol"
+    #print(cost_cost.compare_layout(cost_transpiled))
+    print(cost_cost.check_depth(long_output=True))
+    print(cost_cost.check_depth())
+    print(cost_cost.check_layout())
+
+
+
+
+keep_going = str(input('Everything_look okay?'))
+if keep_going != 'y':
+    this_will_throw_and_error
+    
+
+
+
+if x_sol is not None and bem.current_backend.name() == 'qasm_simulator':
+    assert cost_cost(x_sol) == 1., "pb with ansatz/x_sol"
+    # assert cost1(x_sol) == 1., "pb with ansatz/x_sol"
+    # assert cost2(x_sol) == 1., "pb with ansatz/x_sol"
+    
 
 
 # ===================
 # BO Optim
 # Cost function defined by cost_cost
 # ===================
-# setup
+# setu
     
 print('''Warning: this assumes cost_cost is the default cost_function from here on''')
 NB_INIT = 50
@@ -126,8 +146,8 @@ Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
 
 # Results found
 (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-fid_test(x_seen)
-fid_test(x_exp)
+#fid_test(x_seen)
+#fid_test(x_exp)
 print(Bopt.model.model)
 Bopt.plot_convergence()
 
@@ -158,28 +178,7 @@ ut.gen_pkl_file(cost_cost, Bopt,
 # #EPS = np.pi/2
 # #DOMAIN_RED = [(x-EPS, x+EPS) for x in X_SOL]
 # # ===================
-# # setup
-# NB_INIT = 50
-# NB_ITER = 50
-# DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
-# DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-# bo_args = ut.gen_default_argsbo()
-# bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT})
-# cost_bo = lambda x: 1-fid(x) 
 
-# #optim
-# Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
-# print("start optim")
-# Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
-
-# # Results found
-# (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-# fid_test(x_seen)
-# fid_test(x_exp)
-# print(Bopt.model.model)
-# Bopt.plot_convergence()
-
-# fid_test(x_sol)
 
 # # ===================
 # # BO Optim
@@ -187,24 +186,4 @@ ut.gen_pkl_file(cost_cost, Bopt,
 # # seems to work better with this split 30/70 not so much with 50/50 and more 
 # # exploration
 # # ===================
-# # setup
-# NB_INIT = 30
-# NB_ITER = 70
-# DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
-# DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
-# bo_args = ut.gen_default_argsbo()
-# bo_args.update({'domain': DOMAIN_BO,'initial_design_numdata':NB_INIT, 
-#                 'acquisition_weight': 6})
-# cost_bo = lambda x: 1-cost2(x) 
 
-# #optim
-# Bopt = GPyOpt.methods.BayesianOptimization(cost_bo, **bo_args)    
-# print("start optim")
-# Bopt.run_optimization(max_iter = NB_ITER, eps = 0)
-
-# # Results found
-# (x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-# fid_test(x_seen)
-# fid_test(x_exp)
-# print(Bopt.model.model)
-# Bopt.plot_convergence()

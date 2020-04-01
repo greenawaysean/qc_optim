@@ -27,12 +27,12 @@ FULL_LIST_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore',
              'ibmq_rochester', 'qasm_simulator']
 # There may be more free devices
 FREE_LIST_DEVICES = ['ibmq_16_melbourne', 
-                     'ibmq_vigo', 
-                     'ibmq_armonk',
-                     'ibmq_burlington',
-                     'ibmq_essex',
-                     'ibmq_london',
-                     'ibmq_ourense',
+                     # 'ibmq_vigo', 
+                     # 'ibmq_armonk',
+                     # 'ibmq_burlington',
+                     # 'ibmq_essex',
+                     # 'ibmq_london',
+                     # 'ibmq_ourense',
                      'qasm_simulator']
 
 # ------------------------------------------------------
@@ -232,7 +232,8 @@ def gen_pkl_file(cost,
     dict_to_dill = {'Bopt_results':res_to_dill, 
                     'F_Baseline':baseline_values, 
                     'F_Bopt':bopt_values,
-                    'Circ':cost._main_circuit,
+                    'Layout':cost._main_circuit[0]._layout,
+                    'Depth':cost.check_depth(long_output=True),
                     'Ansatz':cost.ansatz,
                     'Meta':cost._res,
                     'Other':dict_in}

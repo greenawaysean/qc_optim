@@ -6,8 +6,9 @@ Created on Tue Feb 25 18:11:28 2020
 @author: fred
 TODO: (SOON) implement more general graph states 
 TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
-TODO: (SOON) how to make sure that two cost functions are computed based on the 
-same transpiled circuits (e.g. fidelity and another cost function)
+DONE! (added transpiled ansatz) how to make sure that two cost functions are 
+    computed based on the same transpiled circuits (e.g. fidelity and another 
+    cost function)
 TODO: (SOON) Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
 TODO: (LATER) implement sampling (of the measurement settings) strat 
@@ -21,6 +22,7 @@ scope of the classes here
 import qiskit as qk
 import numpy as np
 import pdb
+import copy
 #import itertools as it
 pi =np.pi
 
@@ -47,6 +49,10 @@ class Cost():
             and returning a single value
     
     Other bits of logic have been included:
+        + Pre-transpiled circuits
+          ++ cost now accepts a pre-transpiled circuit as an anzatz. This was
+             implimented without changing how functions work so should not break anything
+             BUG:??? Cost from transpiled ansatz has different depth (don't know why)
         + transpile
           ++ if False the circuit is only transpiled once. Then 
              in this case 'args' should contain 
@@ -147,9 +153,21 @@ class Cost():
         instance = self.instance
         ansatz = self.ansatz
         meas_settings = self._list_meas
-        list_circ_meas = gen_meas_circuits(ansatz, meas_settings, params)
-        self._main_circuit = instance.transpile(list_circ_meas)
-        print('Measurable circuits have been transpiled')
+        
+        # This really feels like a hack, but I couldnt' find a better way
+        if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
+            registers = ansatz._layout.get_physical_bits()
+            qubits = list(np.zeros(self.nb_qubits))
+            for ii in registers:
+                if registers[ii].register.name != 'ancilla':
+                    qubits[registers[ii].index] = int(ii)
+            list_circ_meas = gen_meas_circuits(ansatz, meas_settings, logical_qubits=qubits, params=params)
+            self._main_circuit = list_circ_meas
+            print('Transpiled circuit measurement settings updated')
+        else:
+            list_circ_meas = gen_meas_circuits(ansatz, meas_settings, params=params)
+            self._main_circuit = instance.transpile(list_circ_meas)
+            print('Measurable circuits have been transpiled')
 
     def _gen_qk_vars(self):
         """ Generate qiskit variables to be bound to a circuit"""
@@ -192,17 +210,41 @@ class Cost():
         ref = self._main_circuit[-1]
         test3 = np.all([compare_circuits(ref, c) for c in cost2._main_circuit[:-1]])
         if verbose: print("self and cost2: same layout - {}".format(test3))
-        return test1 * test2 *test3
+        temp1 = self.check_depth(long_output=True)
+        temp2 = cost2.check_depth(long_output=True)
+        test4a = max(temp1) == max(temp2)
+        test4b = min(temp1) == min(temp2)
+        test4 = test4a and test4b
+        if verbose: 
+            print("self and cost2: same depth - {}".format(test4))
+            print("self min-max: {} and {}".format(min(temp1), max(temp1)))
+            print("cost2 min-max: {} and {}".format(min(temp2), max(temp2)))
+        return test1 * test2 *test3 * test4
 
-    def check_depth(self, draw_to_screen = False):
+    def check_depth(self, long_output=False):
         check1 = self.check_layout()
         if not check1:
             print('Circuits are not on the same qubits')
             return False
         depth = [self._main_circuit[ii].depth() for ii in range(len(self._gen_list_meas()))]
         test1 = min(depth) == max(depth)
-        return test1
-            
+        if long_output:
+            return depth
+        else:
+            return test1
+    
+    def draw(self, num=0, depth = False):
+        test1 = self.check_layout()
+        test2 = self.check_depth()
+        circ = self._main_circuit[num]
+        if not test1:
+            print('layouts not equal')
+        if not test2:
+            print('depths not equal')
+        if depth:
+            print(circ.depth())
+        print(circ)
+
         
 
 def compare_circuits(circ1, circ2):
@@ -485,7 +527,7 @@ def freq_even(count_result, indices=None):
 def expected_parity(results,indices=None):
     """ return the estimated value of the expectation of the parity operator:
     P = P+ - P- where P+(-) is the projector 
-    Comment: Parity operator may nor be the right name
+    Comment: Parity operator ircuit.quantumcircuit.QuantumCircuitircuit.quantumcircuit.QuantumCircuitmay nor be the right name
     """
     return 2 * freq_even(results, indices=indices) - 1
 
@@ -502,28 +544,28 @@ def get_substring(string, list_indices=None):
 # ------------------------------------------------------
 # Some functions to deals with appending measurement and param bindings  
 # ------------------------------------------------------
-def append_measurements(circ, measurements):
+def append_measurements(circ, measurements, logical_qubits=None):
     """ Assumes circ returns an instance of the relevant circuit"""
     num_classical = len(measurements.replace('1',''))
     if num_classical > 0:
         cr = qk.ClassicalRegister(num_classical, 'classical')
         circ.add_register(cr)
+    if logical_qubits == None: logical_qubits = np.arange(circ.n_qubits)
     ct_m = 0
     ct_q = 0
     for basis in measurements:
+        qubit_number = logical_qubits[ct_q]
         if basis == 'z':
-            circ.measure(ct_q, ct_m)
+            circ.measure(qubit_number, ct_m)
             ct_m+=1
         elif basis == 'x':
-            #circ.u3(pi/2, 0, 0, ct_q)
-            circ.h(ct_q)
-            circ.measure(ct_q, ct_m)
+            circ.h(qubit_number)
+            circ.measure(qubit_number, ct_m)
             ct_m+=1
         elif basis == 'y':
-            #circ.u3(pi/2, -pi/2, -pi/2, ct_q)
-            circ.sdg(ct_q)
-            circ.h(ct_q)
-            circ.measure(ct_q, ct_m)
+            circ.sdg(qubit_number)
+            circ.h(qubit_number)
+            circ.measure(qubit_number, ct_m)
             ct_m+=1
         elif basis == '1':
             pass
@@ -531,10 +573,17 @@ def append_measurements(circ, measurements):
     return circ
 
 
-def gen_meas_circuits(ansatz, meas_settings, params):
+def gen_meas_circuits(ansatz, meas_settings, params, logical_qubits=None):
     """ Return a list of measurable circuit with same parameters but with 
     different measurement settings"""
-    c_list = [append_measurements(ansatz(params), m) for m in meas_settings]
+    if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
+        if len(ansatz.clbits) > 0:
+            ansatz.remove_final_measurements()
+        c_list = [append_measurements(copy.deepcopy(ansatz), m, logical_qubits) 
+                  for m in meas_settings]    
+    else:
+        c_list = [append_measurements(ansatz(params), m) 
+                  for m in meas_settings]
     return c_list
 
 
