@@ -4,13 +4,15 @@
 Created on Tue Feb 25 18:11:28 2020
 
 @author: fred
-TODO: (IN PROGRESS)implement cyclical graph states 
 TODO: (SOON) implement more general graph states 
+TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
+TODO: (SOON) how to make sure that two cost functions are computed based on the 
+same transpiled circuits (e.g. fidelity and another cost function)
+TODO: (SOON) Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
 TODO: (LATER) implement sampling (of the measurement settings) strat 
 TODO: (LATER) more flexible number of shots
-TODO: (LATER)how to make sure that two cost functions are computed based on the 
-same transpiled circuits (e.g. fidelity and another cost function)
+
 
 Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the 
 quantum instance passed when initializing a Cost, i.e. it is outside of the
@@ -22,7 +24,9 @@ import pdb
 #import itertools as it
 pi =np.pi
 
-
+#======================#
+# Base class
+#======================#
 class Cost():
     """
     This base class defines all the ingredients necessary to evaluate a cost 
@@ -170,8 +174,36 @@ class Cost():
         return self.__call__(params)
        
     
+    def check_layout(self):
+        """ Draft, goal compare transpiled circuits (self._maincircuit)
+        and ensure they have the same layout"""
+        ref = self._main_circuit[-1]
+        test = [compare_circuits(ref, c) for c in self._main_circuit[:-1]]
+        return np.all(test)
+    
+    def compare_layout(self, cost2, verbose=True):
+        """ Draft, goal compare transpiled circuits (self._maincircuit)
+        and ensure they have the same layout"""
+        test1 = self.check_layout()
+        if verbose: print("self: same layout - {}".format(test1))
+        test2 = cost2.check_layout()
+        if verbose: print("cost2: same layout - {}".format(test2))
+        ref = self._main_circuit[-1]
+        test3 = np.all([compare_circuits(ref, c) for c in cost2._main_circuit[:-1]])
+        if verbose: print("self and cost2: same layout - {}".format(test3))
+        return test1 * test2 *test3
 
+def compare_circuits(circ1, circ2):
+    """ Draft, define a list of checks to compare transpiled circuits
+        not clear what the rules should be (or what would be a better name)
+        So far: compare the full layout"""
+    test = True
+    test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
+    return test
+
+#======================#
 # Subclasses: GHZ related costs
+#======================#
 class GHZPauliCost(Cost):
     """ Cost = fidelity w.r.t. a N-qubit GHZ state, estimated based on the 
     expected values of N-fold Pauli operators (e.g. 'XXY')
@@ -249,8 +281,9 @@ class GHZWitness2Cost(Cost):
             return S1 + np.sum(S2) - (N -1)
         return meas_func
     
-    
+#======================#
 # Subclasses: Graph states
+#======================#    
 class GraphCyclPauliCost(Cost):
     """ A N-qubit Cyclical graph has edges = [[1,2],[2,3],...,[N-1,N],[N,1]]
     Cost = fidelity, estimated based on the expected values of the N-fold Pauli 
@@ -311,13 +344,14 @@ class GraphCyclPauliCost(Cost):
 
 
 class GraphCyclWitness1Cost(Cost):
-    """ Cost based on witnesses for genuine entanglement ([guhne2005])
+    """ Cost function based on the construction of witnesses for genuine 
+    entanglement ([guhne2005])
     Stabilizer generators S_l of cyclical graph states are (for N=4 qubits) 
         S = <XZIZ, ZXZI, IZXZ, ZIZX>
     To estimate S_1 to S_N only requires two measurement settings: XZXZ, ZXZX
     Cost =  (S_1 - 1)/2 + Prod_l>1 [(S_l + 1)/2] 
     !!! ONLY WORK FOR EVEN N FOR NOW !!!
-    !!! MORE EXPLAIN NEEDED !!!
+    !!! PROBABLY WRONG (or at least not understood clearly) !!!
     """   
     
     def _gen_list_meas(self):
@@ -345,8 +379,12 @@ class GraphCyclWitness1Cost(Cost):
                 return 0.5*(S_even[-1]-1) + np.prod((S_odd+1)/2) * np.prod((S_even[:-1]+1)/2) 
         return meas_func
 
+
+
+
 class GraphCyclWitness2Cost(Cost):
-    """ Exactly as GraphCyclWitness1Cost except that Cost =  Sum_l[S_l] - (N-1)I """   
+    """ Exactly as GraphCyclWitness1Cost except that:
+        Cost =  Sum_l[S_l] - (N-1)I """   
     def _gen_list_meas(self):
         """ two measurement settings ['zxzx...zxz', 'xzxzx...xzx']"""
         N = self.nb_qubits
@@ -372,6 +410,34 @@ class GraphCyclWitness2Cost(Cost):
                 return np.sum(S_odd) + np.sum(S_even) - (N-1)
         return meas_func
 
+class GraphCyclWitness2FullCost(Cost):
+    """ Same cost function as GraphCyclWitness2Cost, except that the measurement
+    settings to obtain the expected values of the generators S_l have been
+    splitted into N measurent settings (rather than 2), and now each measurement
+    settings involved only 3 measurements instead of N
+    -> measurement outcomes should be less noisy as less measurements are
+       involved per measurement settings
+    """   
+    def _gen_list_meas(self):
+        """ N measurement settings ['xz1..1z', 'zxz1..1', .., 'z1..1zx' ]"""
+        N = self.nb_qubits
+        list_meas = []
+        for ind in range(N):    
+            meas = ['1'] * N
+            meas[(ind-1) % N] = 'z'
+            meas[ind % N] = 'x'
+            meas[(ind+1) % N] = 'z'
+            list_meas.append(''.join(meas))
+        return list_meas
+    
+    def _gen_meas_func(self):
+        """ functions defining how outcome counts should be used """
+        N = self.nb_qubits
+        def meas_func(counts):
+            exp = [expected_parity(c) for c in counts]
+            return np.sum(exp)  - (N-1)
+        return meas_func
+    
 class GraphCyclWitness3Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that Cost =  XXX
     To implement"""   
@@ -588,5 +654,11 @@ if __name__ == '__main__':
     assert cost2_opt == 1.0, "For this ansatz, parameters, cost function should be one"
     assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
     
+    graph_cost2full = GraphCyclWitness2FullCost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
+    cost2full_opt = graph_cost2full(X_SOL)
+    cost2full_rdm = graph_cost2full(X_RDM)
+    assert cost2full_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+    assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
+    assert  np.abs(cost2full_rdm - cost2_rdm) < 0.1, "both cost function should be closed"
     
     
