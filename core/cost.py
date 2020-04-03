@@ -6,23 +6,19 @@ Created on Tue Feb 25 18:11:28 2020
 @author: fred
 TODO: (SOON) implement more general graph states 
 TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
-DONE! (added transpiled ansatz) how to make sure that two cost functions are 
-    computed based on the same transpiled circuits (e.g. fidelity and another 
-    cost function)
 TODO: (SOON) Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
-TODO: (LATER) implement sampling (of the measurement settings) strat 
-TODO: (LATER) more flexible number of shots
-
+TODO: (LATER) implement sampling (of the measurement settings) strategy
 
 Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the 
 quantum instance passed when initializing a Cost, i.e. it is outside of the
 scope of the classes here
 """
 import qiskit as qk
+#from qiskit.aqua.operators.common import pauli_measurement
 import numpy as np
 import pdb
-import copy
+#import copy
 #import itertools as it
 pi =np.pi
 
@@ -39,9 +35,8 @@ class Cost():
         + how should be the full(ansatz+measurements) circuit generated and 
           transpiled
         
-    
     Logic of computing the cost are defined by the followings (which are not
-    implement in the base class but should be implemented in the subclasses):
+    implemented in the base class but should be implemented in the subclasses):
         + self._list_meas is a list of M strings indicating all the measurement 
             settings required
         + self._meas_func is a single function taking as an input the list of 
@@ -62,15 +57,7 @@ class Cost():
              (appended) in self._res
         + shot_noise
           ++ added to see shot noise to better estimate difference in results (maybe this is overkill)
-                    
-    Questions: 
-        + should we pass backend or instance? 
-            ANS: I think instancs is better
-        + Do we need to pass the number of shots in the instance when transpiling or can they 
-        be specified at exec time
-    append_measurements
-            ANS: I suggest not worry for now and assume qiskit will introduce this functionality soon
-    
+
     Terminology:
         + ansatz: callable function (may be a callable object in the future) 
                  which takes parameters as input and return a circuit
@@ -78,14 +65,16 @@ class Cost():
         + measurable circuit: circuit with measurement operations
         
     """
-
     def __init__(self, ansatz, N,  instance, nb_params, fix_transpile = True,
                   keep_res = True, verbose = True, noise_model = None,
-                  debug = False, max_job_size = 900, **args):
+                  debug = False, max_job_size = 900, error_correction = False,
+                  **args):
         """ initialize the cost function taking as input parameters:
-            + ansatz 
+            + ansatz : either a function taking parameters as input and 
+                       returning a circuit, 
+                       or a transpiled circuit
             + N <int>: the number of qubits
-            + simulator
+            + instance (QuantumInstance)
         """
         if debug: pdb.set_trace()
         self.ansatz = ansatz
@@ -93,7 +82,7 @@ class Cost():
         self.nb_qubits = N  # may be redundant
         self.dim = np.power(2,N)
         self.nb_params = nb_params # maybe redundant
-        self.fix_transpile = fix_transpile
+        self.fix_transpile = fix_transpile # is it needed
         self.verbose = verbose
         self._keep_res = keep_res
         self._res = []
@@ -103,71 +92,71 @@ class Cost():
         self._list_meas = self._gen_list_meas()  
         self._meas_func = self._gen_meas_func() 
 
-        # measurable circuits are transpiled at initialization
-        self._gen_qk_vars()
-        self._transpile_measurable_circuits(self._qk_vars)
+
+        #define main circuit, i.e. without measurements
+        if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
+            self._qk_vars = list(ansatz.parameters)
+            self.main_circuit = ansatz.copy()
+            #self._main_circuit.remove_final_measurements()
+        else:
+            self._gen_qk_vars()
+            main_circuit = ansatz(self._qk_vars)
+            self.main_circuit = self.instance.transpile(main_circuit)[0]
+        
+        # Hacky should be careful: if transpiled needs to add measurement to
+        # the physical qubits (corresponding to the virtual ones)
+        self.layout = self.main_circuit._layout
+        if self.layout is not None:
+            registers = self.layout.get_physical_bits()
+            self.log2phys = {v.index:k for k, v in registers.items() 
+                        if v.register.name != 'ancilla'}
+        else:
+            self.log2phys = {i:i for i in range(self.nb_qubits)}
+        self.qubits_indx = [self.log2phys[i] for i in range(self.nb_qubits)]
+        
+        # create measurable circuits
+        self.meas_circuits = gen_meas_circuits(self.main_circuit, 
+                                    self._list_meas, self.qubits_indx)
+        
+        
+        self.err_corr = error_correction
+        if(self.err_corr):
+            pass
     
     def __call__(self, params, debug=False):
         """ Estimate the CostFunction for some parameters - Has a known buy:
             if number of measurement settings > max_job_size """
         if debug: pdb.set_trace()
-        if np.ndim(params) == 1:
-            is_1d = True
-            params = [params]
-        else:
-            is_1d = False
-        # 
-        nb_meas = len(self._list_meas) #number of meas taken per set of parameters
-        
-        bound_circs = []
-        for p in params:
-            bound_circs += bind_params(self._main_circuit, p, self._qk_vars)
-        
-        settings_per_job = int(np.floor(self._max_job_size / nb_meas))
-        counts = []
-        while len(bound_circs) > 0:
-            this_job_circs = min(settings_per_job * nb_meas, len(bound_circs))
-            nb_setparams = int(this_job_circs / nb_meas)
-            this_job = bound_circs[:this_job_circs]
-            bound_circs[:this_job_circs] = []
-            if settings_per_job < 1: print('WARNING results may not be calculated correctly')
-            
-            results = self.instance.execute(this_job, 
-                                            had_transpiled=self.fix_transpile)
 
-            if self._keep_res: self._res.append(results.to_dict())
-            
-            this_job_counts = [[results.get_counts(np*nb_meas+nc) 
-                                for nc in range(nb_meas)] 
-                                for np in range(nb_setparams)]
-            counts+=this_job_counts
-            
+        # reshape the inputs
+        params_resh = np.atleast_2d(params)
+        nb_meas = len(self._list_meas) #number of meas taken per set of parameters
+        nb_params = len(params_resh) #number of different parameters
+        
+        # List of all the circuits to be ran
+        bound_circs = []
+        for p in params_resh:
+            bound_circs += bind_params(self.meas_circuits, p, self._qk_vars)
+
+        # Slice the execution such that a maximum of _max_job_size is executed
+        # ensure that any batch has all the circuits relating to a set of parameters
+        counts = []
+        max_params = int(np.floor(self._max_job_size/nb_meas)) # max param per batch
+        for idx in range(0, nb_params, max_params):
+            circs_batch = bound_circs[idx * nb_meas:(idx + max_params) * nb_meas]
+            results = self.instance.execute(circs_batch, 
+                                            had_transpiled=self.fix_transpile)         
+            if self._keep_res: self._res.append(results.to_dict())            
+            counts += [results.get_counts(i) for i in range(len(circs_batch))]
+        counts = np.reshape(counts, newshape=[nb_params, nb_meas])
+        
+        # reshape the output
         res = np.array([self._meas_func(c) for c in counts]) 
-        if is_1d: res = np.squeeze(res)
-        else: res = res[:,np.newaxis]
+        if np.ndim(res) == 1: 
+            res = res[:,np.newaxis]
         if self.verbose: print(res)
         return res 
-    
-    def _transpile_measurable_circuits(self, params):
-        """ Transpile all the measurable circuits"""
-        instance = self.instance
-        ansatz = self.ansatz
-        meas_settings = self._list_meas
-        
-        # This really feels like a hack, but I couldnt' find a better way
-        if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
-            registers = ansatz._layout.get_physical_bits()
-            qubits = list(np.zeros(self.nb_qubits))
-            for ii in registers:
-                if registers[ii].register.name != 'ancilla':
-                    qubits[registers[ii].index] = int(ii)
-            list_circ_meas = gen_meas_circuits(ansatz, meas_settings, logical_qubits=qubits, params=params)
-            self._main_circuit = list_circ_meas
-            print('Transpiled circuit measurement settings updated')
-        else:
-            list_circ_meas = gen_meas_circuits(ansatz, meas_settings, params=params)
-            self._main_circuit = instance.transpile(list_circ_meas)
-            print('Measurable circuits have been transpiled')
+
 
     def _gen_qk_vars(self):
         """ Generate qiskit variables to be bound to a circuit"""
@@ -190,64 +179,80 @@ class Cost():
         """ Sends a single job that is 8 times to see shot noise."""        
         params = [params for ii in range(nb_experiments)]
         return self.__call__(params)
-       
     
     def check_layout(self):
-        """ Draft, goal compare transpiled circuits (self._maincircuit)
-        and ensure they have the same layout"""
-        ref = self._main_circuit[-1]
-        test = [compare_circuits(ref, c) for c in self._main_circuit[:-1]]
+        """ Draft, check if all the meas_circuit have the same layout
+        TODO: remove except if really needed
+        """
+        ref = self.main_circuit
+        test = [compare_layout(ref, c) for c in self.meas_circuits]
         return np.all(test)
 
-    
     def compare_layout(self, cost2, verbose=True):
         """ Draft, goal compare transpiled circuits (self._maincircuit)
         and ensure they have the same layout"""
         test1 = self.check_layout()
-        if verbose: print("self: same layout - {}".format(test1))
         test2 = cost2.check_layout()
-        if verbose: print("cost2: same layout - {}".format(test2))
-        ref = self._main_circuit[-1]
-        test3 = np.all([compare_circuits(ref, c) for c in cost2._main_circuit[:-1]])
-        if verbose: print("self and cost2: same layout - {}".format(test3))
-        temp1 = self.check_depth(long_output=True)
-        temp2 = cost2.check_depth(long_output=True)
-        test4a = max(temp1) == max(temp2)
-        test4b = min(temp1) == min(temp2)
-        test4 = test4a and test4b
+        test3 = compare_layout(self.main_circuit, cost2.main_circuit)
         if verbose: 
-            print("self and cost2: same depth - {}".format(test4))
-            print("self min-max: {} and {}".format(min(temp1), max(temp1)))
-            print("cost2 min-max: {} and {}".format(min(temp2), max(temp2)))
-        return test1 * test2 *test3 * test4
-
-    def check_depth(self, long_output=False):
-        check1 = self.check_layout()
-        if not check1:
-            print('Circuits are not on the same qubits')
-            return False
-        depth = [self._main_circuit[ii].depth() for ii in range(len(self._gen_list_meas()))]
-        test1 = min(depth) == max(depth)
-        if long_output:
-            return depth
-        else:
-            return test1
+            print("self: same layout - {}".format(test1))
+            print("cost2: same layout - {}".format(test2))
+            print("self and cost2: same layout - {}".format(test3))
+        return test1 * test2 *test3
     
-    def draw(self, num=0, depth = False):
-        test1 = self.check_layout()
-        test2 = self.check_depth()
-        circ = self._main_circuit[num]
-        if not test1:
-            print('layouts not equal')
-        if not test2:
-            print('depths not equal')
-        if depth:
-            print(circ.depth())
-        print(circ)
+    def check_depth(self, long_output=False, delta = 1):
+        """ Check the depths of the measurable circuits, are all within a delta
+        """
+        depth = [c.depth() for c in self.meas_circuits]
+        test = (max(depth) - min(depth)) <=delta
+        return test
+    
+    def get_depth(self, num=None):
+        """ Get the depth of the circuit(s)
+        if num=None main_circuit / num=-1 all the meas_circ / else meas_circ[num] 
+        """
+        circ = self._return_circuit(num)
+        depth = [c.depth() for c in circ]
+        return depth
+    
+    def compare_depth(self, cost2, verbose=True, delta=0):
+        """ Draft, goal compare transpiled circuits (self._maincircuit)
+        and ensure they have the same layout"""
+        depth1 = self.check_depth(long_output=True)
+        depth2 = cost2.check_depth(long_output=True)
+        test1 = np.abs(max(depth1) - max(depth2)) <= delta
+        test2 = np.abs(min(depth1) - min(depth2)) <= delta
+        test = test1 and test2
+        if verbose: 
+            print("self and cost2: same depth - {}".format(test))
+            print("self min-max: {} and {}".format(min(depth1), max(depth1)))
+            print("cost2 min-max: {} and {}".format(min(depth2), max(depth2)))
+        return test
+
+    def draw(self, num=None, depth = False):
+        """ Draw one of the circuit 
+        if num=None main_circuit / num=-1 all the meas_circ / else meas_circ[num] 
+        """
+        circs = self._return_circuit(num)
+        for c in circs:
+            print(c)
+            if depth:
+                print(c.depth())
 
         
+    def _return_circuit(self, num=None):
+        """ Return a list of circuits according to num following the convention:
+        if num=None main_circuit / num=-1 all the meas_circ / else meas_circ[num] 
+        """
+        if num is None:
+            circ = [self.main_circuit]
+        elif num >= 0:
+            circ = [self.meas_circuits[num]]
+        elif num == -1:
+            circ = self.meas_circuits
+        return circ
 
-def compare_circuits(circ1, circ2):
+def compare_layout(circ1, circ2):
     """ Draft, define a list of checks to compare transpiled circuits
         not clear what the rules should be (or what would be a better name)
         So far: compare the full layout"""
@@ -495,13 +500,26 @@ class GraphCyclWitness2FullCost(Cost):
 class GraphCyclWitness3Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that Cost =  XXX
     To implement"""   
+    
     def _gen_list_meas(self):
-        """ two measurement settings ['zxzx...zxz', 'xzxzx...xzx']"""
-        raise NotImplementedError("To be implemented")
+        """ N measurement settings ['xz1..1z', 'zxz1..1', .., 'z1..1zx' ]"""
+        N = self.nb_qubits
+        list_meas = []
+        for ind in range(N):    
+            meas = ['1'] * N
+            meas[(ind-1) % N] = 'z'
+            meas[ind % N] = 'x'
+            meas[(ind+1) % N] = 'z'
+            list_meas.append(''.join(meas))
+        return list_meas
     
     def _gen_meas_func(self):
         """ functions defining how outcome counts should be used """
-        raise NotImplementedError("To be implemented")
+        N = self.nb_qubits
+        def meas_func(counts):
+            exp = [expected_parity(c) for c in counts]
+            return np.sum(exp)  - (N-1)
+        return meas_func
         
 # ------------------------------------------------------
 # Functions to compute expected values based on measurement outcomes counts as 
@@ -531,7 +549,6 @@ def expected_parity(results,indices=None):
     """
     return 2 * freq_even(results, indices=indices) - 1
 
-
 def get_substring(string, list_indices=None):
     """ return a substring comprised of only the elements associated to the 
     list of indices
@@ -545,46 +562,40 @@ def get_substring(string, list_indices=None):
 # Some functions to deals with appending measurement and param bindings  
 # ------------------------------------------------------
 def append_measurements(circ, measurements, logical_qubits=None):
-    """ Assumes circ returns an instance of the relevant circuit"""
-    num_classical = len(measurements.replace('1',''))
-    if num_classical > 0:
-        cr = qk.ClassicalRegister(num_classical, 'classical')
+    """ Append measurements to one circuit """
+    num_creg = len(measurements.replace('1',''))
+    if num_creg > 0:
+        cr = qk.ClassicalRegister(num_creg, 'classical')
         circ.add_register(cr)
-    if logical_qubits == None: logical_qubits = np.arange(circ.n_qubits)
-    ct_m = 0
-    ct_q = 0
-    for basis in measurements:
-        qubit_number = logical_qubits[ct_q]
+    
+    if logical_qubits is None: 
+        logical_qubits = np.arange(circ.n_qubits)
+    
+    creg_idx = 0
+    for qb_idx, basis in enumerate(measurements):
+        qubit_number = logical_qubits[qb_idx]
         if basis == 'z':
-            circ.measure(qubit_number, ct_m)
-            ct_m+=1
+            circ.measure(qubit_number, creg_idx)
+            creg_idx += 1
         elif basis == 'x':
-            circ.h(qubit_number)
-            circ.measure(qubit_number, ct_m)
-            ct_m+=1
+            circ.u2(0.0, pi, qubit_number)  # h
+            circ.measure(qubit_number, creg_idx)
+            creg_idx += 1
         elif basis == 'y':
-            circ.sdg(qubit_number)
-            circ.h(qubit_number)
-            circ.measure(qubit_number, ct_m)
-            ct_m+=1
-        elif basis == '1':
-            pass
-        ct_q+=1
+            circ.u1(-np.pi / 2, qubit_number)  # sdg
+            circ.u2(0.0, pi, qubit_number)  # h
+            circ.measure(qubit_number, creg_idx)
+            creg_idx += 1
+        elif basis != '1':
+            raise NotImplementedError('measurement basis {} not understood').format(basis)
     return circ
 
 
-def gen_meas_circuits(ansatz, meas_settings, params, logical_qubits=None):
-    """ Return a list of measurable circuit with same parameters but with 
-    different measurement settings"""
-    if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
-        if len(ansatz.clbits) > 0:
-            ansatz.remove_final_measurements()
-        c_list = [append_measurements(copy.deepcopy(ansatz), m, logical_qubits) 
-                  for m in meas_settings]    
-    else:
-        len(ansatz(params))
-        c_list = [append_measurements(ansatz(params), m) 
-                  for m in meas_settings]
+def gen_meas_circuits(main_circuit, meas_settings, logical_qubits=None):
+    """ Return a list of measurable circuit based on a main circuit and
+    different settings"""
+    c_list = [append_measurements(main_circuit.copy(), m, logical_qubits) 
+                  for m in meas_settings] 
     return c_list
 
 
@@ -594,8 +605,7 @@ def bind_params(circ, param_values, param_variables):
     Returns the list of circuits with bound values DOES NOT MODIFY INPUT
     (i.e. hardware details??)
     """
-    if type(circ) != list: 
-        circ = [circ]
+    if type(circ) != list: circ = [circ]
     val_dict = {key:val for key,val in zip(param_variables, param_values)}
     bound_circ = [cc.bind_parameters(val_dict) for cc in circ]
     return bound_circ  
@@ -604,123 +614,132 @@ def bind_params(circ, param_values, param_variables):
 
 
 if __name__ == '__main__':
-    #-----#
-    # Verif conventions
-    #-----#
-    def ansatz(params):
-        c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(2, 'b'))
-        c.h(0)
-        return c
+    from qiskit.test.mock import FakeRochester
+    fake = FakeRochester() # not working
+    simulator = qk.Aer.get_backend('qasm_simulator')
+    backends = [simulator]
     
-    sim = qk.Aer.get_backend('qasm_simulator')
-    inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
-    m_c = gen_meas_circuits(ansatz, ['zz'], [])
-    res = inst.execute(m_c)
-    counts = res.get_counts()
+    for sim in backends:
+        #-----#
+        # Verif conventions
+        #-----#
+        def ansatz(params):
+            c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(2, 'b'))
+            c.h(0)
+            return c
+        
+        
+        inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+        transpiled_cir = inst.transpile(ansatz([]))[0]
+        m_c = gen_meas_circuits(transpiled_cir, ['zz'])
+        res = inst.execute(m_c)
+        counts = res.get_counts()
+        
+        #-----#
+        # GHZ
+        #-----#
+        # Create an ansatz capable of generating a GHZ state (not the most obvious 
+        # one here) with the set of params X_SOL
+        def ansatz(params):
+            c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), 
+                            qk.QuantumRegister(1, 'b'), qk.QuantumRegister(1,'c'))
+            c.rx(params[0], 0)
+            c.rx(params[1], 1)
+            c.ry(params[2], 2)
+            c.barrier()
+            c.cnot(0,2) 
+            c.cnot(1,2) 
+            c.barrier()
+            c.rx(params[3], 0)
+            c.rx(params[4], 1)
+            c.ry(params[5], 2)
+            c.barrier()
+            return c
+        X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
+        X_LOC = np.pi/2 * np.array([1., 0., 4., 0., 3., 0.])
+        X_RDM = np.random.uniform(0.0, 2*pi, size=(6,1))
+        
+        # Create an instance
+        sim = qk.Aer.get_backend('qasm_simulator')
+        inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+        
+        # Verif the values of the different GHZ cost
+        # Fidelity
+        ghz_cost = GHZPauliCost(ansatz=ansatz, instance = inst, N=3, nb_params=6, max_job_size=50)
+        assert ghz_cost(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert np.abs(ghz_cost(X_LOC) - 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.5 (up to sampling error)"
+        
+        test_batch = ghz_cost([X_SOL] * 95)
+        
+        # Witnesses inspired cost functions: they are different compared to the fidelity
+        # but get maximized only when the state is the right one
+        ghz_witness1 = GHZWitness1Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+        assert ghz_witness1(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert np.abs(ghz_witness1(X_LOC) - 0.31) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"
     
-    #-----#
-    # GHZ
-    #-----#
-    # Create an ansatz capable of generating a GHZ state (not the most obvious 
-    # one here) with the set of params X_SOL
-    def ansatz(params):
-        c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), 
-                        qk.QuantumRegister(1, 'b'), qk.QuantumRegister(1,'c'))
-        c.rx(params[0], 0)
-        c.rx(params[1], 1)
-        c.ry(params[2], 2)
-        c.barrier()
-        c.cnot(0,2) 
-        c.cnot(1,2) 
-        c.barrier()
-        c.rx(params[3], 0)
-        c.rx(params[4], 1)
-        c.ry(params[5], 2)
-        c.barrier()
-        return c
-    X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
-    X_LOC = np.pi/2 * np.array([1., 0., 4., 0., 3., 0.])
-    X_RDM = np.random.uniform(0.0, 2*pi, size=(6,1))
+        ghz_witness2 = GHZWitness2Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
+        assert ghz_witness2(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert np.abs(ghz_witness2(X_LOC) + 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"    
+        
+        
+        
+        #-----#
+        # Cyclical graph states
+        #-----#
+        N_graph = 6
+        N_params = 6
+        def ansatz(params):
+            c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(1, 'b'),
+                                  qk.QuantumRegister(1,'c'),qk.QuantumRegister(1,'d'),
+                                  qk.QuantumRegister(1,'e'),qk.QuantumRegister(1,'f'))
+            c.ry(params[0],0)
+            c.ry(params[1],1)
+            c.ry(params[2],2)
+            c.ry(params[3],3)
+            c.ry(params[4],4)
+            c.ry(params[5],5)
+            c.barrier()
+            c.cu1(pi,0,1)
+            c.cu1(pi,2,3)
+            c.cu1(pi,4,5)
+            c.barrier()
+            c.cu1(pi,1,2)
+            c.cu1(pi,3,4)
+            c.cu1(pi,5,0)
+            c.barrier()
+            return c
     
-    # Create an instance
-    sim = qk.Aer.get_backend('qasm_simulator')
-    inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
-    
-    # Verif the values of the different GHZ cost
-    # Fidelity
-    ghz_cost = GHZPauliCost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
-    assert ghz_cost(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert np.abs(ghz_cost(X_LOC) - 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.5 (up to sampling error)"
-    
-    # Witnesses inspired cost functions: they are different compared to the fidelity
-    # but get maximized only when the state is the right one
-    ghz_witness1 = GHZWitness1Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
-    assert ghz_witness1(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert np.abs(ghz_witness1(X_LOC) - 0.31) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"
-
-    ghz_witness2 = GHZWitness2Cost(ansatz=ansatz, instance = inst, N=3, nb_params=6)
-    assert ghz_witness2(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert np.abs(ghz_witness2(X_LOC) + 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.31 (up to sampling error)"    
-    
-    
-    
-    #-----#
-    # Cyclical graph states
-    #-----#
-    N_graph = 6
-    N_params = 6
-    def ansatz(params):
-        c = qk.QuantumCircuit(qk.QuantumRegister(1, 'a'), qk.QuantumRegister(1, 'b'),
-                              qk.QuantumRegister(1,'c'),qk.QuantumRegister(1,'d'),
-                              qk.QuantumRegister(1,'e'),qk.QuantumRegister(1,'f'))
-        c.ry(params[0],0)
-        c.ry(params[1],1)
-        c.ry(params[2],2)
-        c.ry(params[3],3)
-        c.ry(params[4],4)
-        c.ry(params[5],5)
-        c.barrier()
-        c.cu1(pi,0,1)
-        c.cu1(pi,2,3)
-        c.cu1(pi,4,5)
-        c.barrier()
-        c.cu1(pi,1,2)
-        c.cu1(pi,3,4)
-        c.cu1(pi,5,0)
-        c.barrier()
-        return c
-
-    X_SOL = np.pi/2 * np.ones(N_params) # sol of the cycl graph state for this ansatz
-    X_RDM = np.array([1.70386471,1.38266762,3.4257722,5.78064,3.84102323,2.37653078])
-    #X_RDM = np.random.uniform(low=0., high=2*np.pi, size=(N_params,))
-    
-    # Create an instance
-    sim = qk.Aer.get_backend('qasm_simulator')
-    inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
-    graph_cost = GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=N_graph
-                                    , nb_params=N_params)
-    fid_opt = graph_cost(X_SOL)
-    fid_rdm = graph_cost(X_RDM)
-    assert fid_opt == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert (fid_opt-fid_rdm) > 1e-4, "For this ansatz, parameters, cost function should be one"
-    
-    graph_cost1 = GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
-    cost1_opt = graph_cost1(X_SOL)
-    cost1_rdm = graph_cost1(X_RDM)
-    assert cost1_opt == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert  (fid_rdm - cost1_rdm) > 1e-4, "cost function1 should be lower than true fid"
-    
-    graph_cost2 = GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
-    cost2_opt = graph_cost2(X_SOL)
-    cost2_rdm = graph_cost2(X_RDM)
-    assert cost2_opt == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
-    
-    graph_cost2full = GraphCyclWitness2FullCost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
-    cost2full_opt = graph_cost2full(X_SOL)
-    cost2full_rdm = graph_cost2full(X_RDM)
-    assert cost2full_opt == 1.0, "For this ansatz, parameters, cost function should be one"
-    assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
-    assert  np.abs(cost2full_rdm - cost2_rdm) < 0.1, "both cost function should be closed"
-    
-    
+        X_SOL = np.pi/2 * np.ones(N_params) # sol of the cycl graph state for this ansatz
+        X_RDM = np.array([1.70386471,1.38266762,3.4257722,5.78064,3.84102323,2.37653078])
+        #X_RDM = np.random.uniform(low=0., high=2*np.pi, size=(N_params,))
+        
+        # Create an instance
+        sim = qk.Aer.get_backend('qasm_simulator')
+        inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+        graph_cost = GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=N_graph
+                                        , nb_params=N_params)
+        fid_opt = graph_cost(X_SOL)
+        fid_rdm = graph_cost(X_RDM)
+        assert fid_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert (fid_opt-fid_rdm) > 1e-4, "For this ansatz, parameters, cost function should be one"
+        
+        graph_cost1 = GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
+        cost1_opt = graph_cost1(X_SOL)
+        cost1_rdm = graph_cost1(X_RDM)
+        assert cost1_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert  (fid_rdm - cost1_rdm) > 1e-4, "cost function1 should be lower than true fid"
+        
+        graph_cost2 = GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
+        cost2_opt = graph_cost2(X_SOL)
+        cost2_rdm = graph_cost2(X_RDM)
+        assert cost2_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
+        
+        graph_cost2full = GraphCyclWitness2FullCost(ansatz=ansatz, instance = inst, N=N_graph, nb_params=N_params)
+        cost2full_opt = graph_cost2full(X_SOL)
+        cost2full_rdm = graph_cost2full(X_RDM)
+        assert cost2full_opt == 1.0, "For this ansatz, parameters, cost function should be one"
+        assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
+        assert  np.abs(cost2full_rdm - cost2_rdm) < 0.1, "both cost function should be closed"
+        
+        
