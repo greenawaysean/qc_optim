@@ -22,8 +22,8 @@ import string
 import random
 
 NB_SHOTS_DEFAULT = 256
-OPTIMIZATION_LEVEL_DEFAULT = 3
-FULL_LIST_DEVICES = ['ibmq_poughkeepsie', 'ibmq_boeblingen', 'ibmq_singapore', 
+OPTIMIZATION_LEVEL_DEFAULT = 1
+FULL_LIST_DEVICES = ['ibmq_poughkeepsie', 'ibmq_paris', 'ibmq_singapore', 
              'ibmq_rochester', 'qasm_simulator']
 # There may be more free devices
 FREE_LIST_DEVICES = ['ibmq_16_melbourne', 
@@ -48,7 +48,7 @@ class BackendManager():
     """
     def __init__(self):
         provider_free = qk.IBMQ.load_account()
-        if 'kkhosla' in os.getcwd():
+        if 'kkhosla' in os.getcwd(): # or 'kiran' in os.getcwd():
             self.LIST_OF_DEVICES = FULL_LIST_DEVICES
             provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
             self.provider_list = {'free':provider_free, 'imperial':provider_imperial}
