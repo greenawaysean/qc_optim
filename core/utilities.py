@@ -240,14 +240,13 @@ def gen_pkl_file(cost,
 
     
     res_to_dill = gen_res(Bopt)
-    dict_to_dill = {'Bopt_results':res_to_dill, 
-                    'F_Baseline':baseline_values, 
-                    'F_Bopt':bopt_values,
-                    'Layout':cost._main_circuit[0]._layout,
-                    'Depth':cost.check_depth(long_output=True),
-                    'Ansatz':cost.ansatz,
-                    'Meta':cost._res,
-                    'Other':dict_in}
+    dict_to_dill = {'bopt_results':res_to_dill, 
+                    'cost_baseline':baseline_values, 
+                    'cost_bopt':bopt_values,
+                    'depth':cost.get_depth(-1),
+                    'ansatz':cost.main_circuit,
+                    'meta':cost._res,
+                    'other':dict_in}
 
     with open(file_name, 'wb') as f:                                                                                                                                                                                                          
         dill.dump(dict_to_dill, f)                                                                                                                                                                                                            

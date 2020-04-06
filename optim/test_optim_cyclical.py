@@ -110,7 +110,7 @@ if bem.current_backend.name() != 'qasm_simulator':
     print(cost_cost.check_depth(long_output=True))
     print(cost_cost.check_depth())
     print(cost_cost.check_layout())
-
+    print(cost_cost.main_circuit)
 
 
 
@@ -135,7 +135,7 @@ if x_sol is not None and bem.current_backend.name() == 'qasm_simulator':
 # setu
     
 print('''Warning: this assumes cost_cost is the default cost_function from here on''')
-NB_INIT = 50
+NB_INIT = 30
 NB_ITER = 50
 DOMAIN_FULL = [(np.pi/4, 3*np.pi/4) for i in range(nb_p)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
