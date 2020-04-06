@@ -21,6 +21,18 @@ data = dill.load(f)
 f.close()
 del(f)
 
+def load(f_in):
+    """ This doesn't work yet. Looks like I might have to make a data class 
+        (was hoping to avoid this)"""
+    global f_name
+    global data
+    f_name = f_in
+    f = open(f_name, 'rb')
+    data = dill.load(f)
+    f.close()
+    del(f)
+    return data
+
 
 def print_all_keys(data=data):
     """ Prints a list of keys in the loaded file - just to see whats there"""
