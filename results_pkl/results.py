@@ -15,7 +15,7 @@ import dill
 import matplotlib.pyplot as plt 
 pi=np.pi
 
-f_name = '_res_ibmq_singapore_GraphCyclPauliCost_MCb.pkl'
+f_name = '_res_ibmq_singapore_GraphCyclPauliCost_iwW.pkl'
 f = open(f_name, 'rb')
 data = dill.load(f)
 f.close()
@@ -50,7 +50,7 @@ def print_all_keys(data=data):
 
 def plot_convergence(data=data):
     """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
-    bopt = data['Bopt_results']
+    bopt = data['bopt_results']
     X = bopt['X']
     Y = bopt['Y']
     plt.subplot(1, 2, 1)
@@ -78,8 +78,8 @@ def plot_baselines(data=data,
                    bins=30):
     """ Plots baseline histograms with mean and variance of each, comparing
         the Bopt values to the true baseilne values"""
-    baseline = data['F_Baseline']
-    bopt = data['F_Bopt']
+    baseline = data['cost_baseline']
+    bopt = data['cost_bopt']
     all_data = np.squeeze(np.concatenate([baseline, bopt]))
     x_min = 0.9*min(all_data)
     x_max = 1.1*max(all_data)
@@ -89,7 +89,7 @@ def plot_baselines(data=data,
     plt.ylabel('count')
     mean = np.round(np.mean(baseline), 4)
     std = np.round(np.std(baseline), 4)
-    plt.title('mean: {} \n std: {}'.format(mean,std))
+    plt.title('Base: mean: {} \n std: {}'.format(mean,std))
     if same_axis: plt.xlim(x_min, x_max)
     
     plt.subplot(1, 2, 2)    
@@ -98,8 +98,9 @@ def plot_baselines(data=data,
     plt.ylabel('count')    
     mean = np.round(np.mean(bopt), 4)
     std = np.round(np.std(bopt), 4)
-    plt.title('mean: {} \n std: {}'.format(mean,std))
+    plt.title('Opt: mean: {} \n std: {}'.format(mean,std))
     if same_axis: plt.xlim(x_min, x_max)
+    
     
     plt.show()
 
@@ -108,11 +109,17 @@ def plot_circ(data=data):
     """ Displays quick info about the ansatz circuit:
         TODO: Add check for transpiled ansatz circuit
               Add log2phys mapping if avaliable"""
-    circ = data['Ansatz']
-    x_pred = data['Bopt_results']['x_pred']
-    depth = data['Depth']
-    circ = circ(x_pred)
-    meta = data['Meta'][0]
+    circ = data['ansatz']
+    x_pred = data['bopt_results']['x_pred']
+    try:
+        depth = data['depth']
+    except:
+        depth = [0]
+    #circ = circ(x_pred)
+    try:
+        meta = data['meta'][0]
+    except:
+        meta = {'backend_name':'unknown'}
     print('Backend: {}'.format(meta['backend_name']))
     print('Circuit depths = {} \pm {}'.format(np.mean(depth), np.std(depth)))
     print(circ)
@@ -122,7 +129,7 @@ def compare_pred(data=data,
                  x_sol=None):
     """ Compares Predicted, observed and analytic (input spesified) parameter 
         solutions. """
-    bopt = data['Bopt_results']
+    bopt = data['bopt_results']
     x_obs = bopt['x_obs']
     x_pred = bopt['x_pred']
     y_obs = np.round(bopt['y_obs'], 3)
@@ -140,7 +147,12 @@ def compare_pred(data=data,
     plt.title('Sol vs Seen (Dist = {})'.format(np.round(distance,4)))
 
 
-
+def plot_param_trajectories(data=data):
+    """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
+    bopt = data['bopt_results']
+    X = bopt['X']
+    Y = bopt['Y']
+    
 
 if __name__ =='__main__':
     plot_baselines()
