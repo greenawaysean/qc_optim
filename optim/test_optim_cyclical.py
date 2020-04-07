@@ -19,6 +19,7 @@ import copy
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 1
 SINGAPORE_GATE_MAP = [1,2,3,8,7,6] # Maybe put this in bem
+
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
@@ -29,8 +30,6 @@ bem.get_backend(chosen_device, inplace=True)
 inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
                                      optim_lvl=OPTIMIZATION_LEVEL_DEFAULT,
                                      initial_layout=SINGAPORE_GATE_MAP)
-inst_test = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
-                                     optim_lvl=1)
 
 # ===================
 # Define ansatz and initialize costfunction
@@ -59,39 +58,38 @@ def ansatz_easy(params, barriers = False):
 
 
 
-def ansatz_hard(params):
+def ansatz_hard(params, barriers = False):
     """ Ansatz to be refined"""
     logical_qubits = qk.QuantumRegister(6, 'logicals')
     c = qk.QuantumCircuit(logical_qubits)
-    c.ry(params[0],0)
-    c.ry(params[1],1)
-    c.ry(params[2],2)
-    c.ry(params[3],3)
-    c.ry(params[4],4)
-    c.ry(params[5],5)
-    c.barrier()
+    c.u2(params[0], params[1], 0)
+    c.u2(params[2], params[3], 1)
+    c.u2(params[4], params[5], 2)
+    c.u2(params[6], params[7], 3)
+    c.u2(params[8], params[9], 4)
+    c.u2(params[10], params[11], 5)
+    if barriers: c.barrier()
     c.cnot(0,1) 
     c.cnot(2,3) 
     c.cnot(4,5)
     c.cnot(1,2) 
-    c.cnot(3,5)
-    c.cnot(4,0)
-    c.barrier()
-    c.ry(params[6], 0)
-    c.ry(params[7], 1)
-    c.ry(params[8], 2)
-    c.rx(params[9], 3)
-    c.ry(params[10], 4)
-    c.rx(params[11], 5)
-    c.barrier()
+    c.cnot(3,4)
+    c.cnot(5,0)
+    if barriers: c.barrier()
+    c.u2(params[12], params[13], 0)
+    c.u2(params[14], params[15], 1)
+    c.u2(params[16], params[17], 2)
+    c.u2(params[18], params[19], 3)
+    c.u2(params[20], params[21], 4)
+    c.u2(params[22], params[23], 5)
+    if barriers: c.barrier()
     return c
 
 
 ### (ansatz, nb_params, nb_qubits, sol)
 pb_infos = [(ansatz_easy, 6, 6, np.pi/2 * np.ones(shape=(6,))),
-             (ansatz_hard, 12, 6, None)]
-ansatz, nb_p, nb_q, x_sol = pb_infos[0]
-
+             (ansatz_hard, 24, 6, None)]
+ansatz, nb_p, nb_q, x_sol = pb_infos[1]
 # different cost functions 
 # fid = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 # fid_test = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst_test, N=nb_q, nb_params=nb_p)
@@ -135,9 +133,9 @@ if x_sol is not None and bem.current_backend.name() == 'qasm_simulator':
 # setu
     
 print('''Warning: this assumes cost_cost is the default cost_function from here on''')
-NB_INIT = 30
-NB_ITER = 50
-DOMAIN_FULL = [(np.pi/4, 3*np.pi/4) for i in range(nb_p)]
+NB_INIT = 80
+NB_ITER = 80
+DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
 cost_bo = lambda x: 1-cost_cost(x) 
 bo_args = ut.gen_default_argsbo(f=cost_bo, domain=DOMAIN_FULL, nb_init=NB_INIT)

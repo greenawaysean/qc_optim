@@ -8,6 +8,8 @@ Miscellaneous utilities (may be split at some point):
     ++ Management of backends (custom for various users)
     ++ GPyOpt related functions
     ++ Manages saving optimizer results
+    ++ Results class added (not backwards compatible before 07/04/2020)
+    
     
     
 """
@@ -35,6 +37,8 @@ FREE_LIST_DEVICES = ['ibmq_16_melbourne',
                      # 'ibmq_ourense',
                      'qasm_simulator']
 
+
+
 # ------------------------------------------------------
 # Back end management related utilities
 # ------------------------------------------------------
@@ -57,6 +61,7 @@ class BackendManager():
             self.provider_list = {'free':provider_free}
         self.simulator = qk.Aer.get_backend('qasm_simulator')
         self.current_backend = self.simulator
+       
 
     # backend related utilities
     def print_backends(self):
@@ -251,3 +256,216 @@ def gen_pkl_file(cost,
     with open(file_name, 'wb') as f:                                                                                                                                                                                                          
         dill.dump(dict_to_dill, f)                                                                                                                                                                                                            
 
+
+
+
+
+class results():
+    """ Results class to quickly analize a pkl file
+        Will be bcakward compatible with .plk from 07/04/2020"""
+    def __init__(self, f_name, reduced_meta = True):
+        self.name = f_name
+        self.reduced_meta = reduced_meta
+        self.data = self._load(f_name)
+
+
+    def _load(self, f_name):
+        """ This doesn't work yet. Looks like I might have to make a data class 
+            (was hoping to avoid this)"""
+        with open(f_name, 'rb') as f:
+            data = dill.load(f)
+        if self.reduced_meta:
+            data['meta'] = [data['meta'][0]]
+        return data
+
+    def print_all_keys(self, dict_in=None):
+        """ Prints a list of keys in the loaded file - just to see whats there"""
+        if dict_in == None: dict_in = self.data
+        keys = dict_in.keys()
+        running_tot = []
+        for key in keys:
+            if type(dict_in[key]) == dict:
+                sub_list = self.print_all_keys(dict_in[key])
+                running_tot.append(key)
+                running_tot.append(sub_list)
+            else:
+                running_tot.append(key)
+        return running_tot
+
+    
+    def plot_convergence(self):
+        """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
+        bopt = self.data['bopt_results']
+        X = bopt['X']
+        Y = bopt['Y']
+        plt.subplot(1, 2, 1)
+        plt.plot(self._diff_between_x(X))
+        plt.xlabel('itt')
+        plt.ylabel('|dX_i|')
+        plt.subplot(1, 2, 2)
+        plt.plot(Y)
+        plt.xlabel('itt')
+        plt.ylabel('Y')
+        plt.show()
+
+
+    def plot_baselines(self,
+                       same_axis=False,
+                       bins=30):
+        """ Plots baseline histograms with mean and variance of each, comparing
+            the Bopt values to the true baseilne values"""
+        baseline = self.data['cost_baseline']
+        bopt = self.data['cost_bopt']
+        all_data = np.squeeze(np.concatenate([baseline, bopt]))
+        x_min = 0.9*min(all_data)
+        x_max = 1.1*max(all_data)
+        if same_axis:
+            plt.hist(baseline, bins,label='base')
+            plt.hist(bopt, bins,label='bopt')
+            plt.xlabel('Yobs')
+            plt.ylabel('count')
+            plt.legend() ## add means +vars here
+        else:
+            plt.subplot(1, 2, 1)
+            plt.hist(baseline, bins)
+            mean = np.round(np.mean(baseline), 4)
+            std = np.round(np.std(baseline), 4)
+            plt.title('Base: mean: {} \n std: {}'.format(mean,std))
+            
+            plt.subplot(1, 2, 2)    
+            plt.hist(bopt, bins)
+            plt.xlabel('Yobs')
+            plt.ylabel('count')    
+            mean = np.round(np.mean(bopt), 4)
+            std = np.round(np.std(bopt), 4)
+            plt.title('Opt: mean: {} \n std: {}'.format(mean,std))
+        plt.show()
+
+    
+    def plot_circ(self):
+        """ Displays quick info about the ansatz circuit:
+            TODO: Add check for transpiled ansatz circuit
+                  Add log2phys mapping if avaliable"""
+        circ = self.data['ansatz']
+        depth = self.data['depth']
+        meta = self.data['meta'][0]
+        fig, ax = plt.subplots(1,1)
+        circ.draw(output='mpl',ax=ax,scale=0.4, vertical_compression='high')
+        plt.title('Backend: {} \n Circuit depths = {} \pm {}'.format(meta['backend_name'], np.mean(depth), np.std(depth)))
+        plt.show()
+            
+            
+    def plot_final_params(self,
+                     x_sol=None):
+        """ Compares Predicted, observed and analytic (input spesified) parameter 
+            solutions. """
+        bopt = self.data['bopt_results']
+        x_obs = bopt['x_obs']
+        x_pred = bopt['x_pred']
+        y_obs = np.round(bopt['y_obs'], 3)
+        y_pred = np.round(bopt['y_pred'], 3)
+        
+        plt.plot(x_obs, 'rd', label='obs: ({})'.format(y_obs))
+        plt.plot(x_pred, 'k*', label='pred: ({})'.format(y_pred))
+        if x_sol == None:
+            try:
+                x_sol = self.data['x_sol']
+            except:
+                pass
+        if x_sol != None:
+            plt.plot(x_sol, 'bo', label='sol: ({})'.format(1))
+            x_sol = np.array(x_sol)
+            distance = _diff_between_x(np.array([x_sol, x_pred]))
+        plt.legend()
+        plt.xlabel('Parameter #')
+        plt.ylabel('Parameter value')
+        plt.title('Sol vs Seen')# (Dist = {})'.format(np.round(distance,4)))
+        plt.show()
+        
+        
+    
+    def plot_param_trajectories(self):
+        """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
+        bopt = self.data['bopt_results']
+        X = bopt['X']
+        Y = bopt['Y']
+        nb_params = len(X[0])
+        plt_x, plt_y = self._decide_plot_layout(nb_params)
+        fig, ax_vec = plt.subplots(plt_x, plt_y, sharex=True, sharey=True)
+        ax_vec = [ax_vec[ii][jj] for ii in range(plt_x) for jj in range(plt_y)]
+        for ii in range(nb_params):
+            ax_vec[ii].plot(X[:,ii])
+            ax_vec[ii].set_title('param #{}'.format(str(ii)))
+        fig.add_subplot(111, frameon=False) 
+        plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+        plt.xlabel("itter")
+        plt.ylabel("angle")
+        plt.show()
+    
+    def bopt_summary(self):
+        bopt = self.data['bopt_results']
+        gp_params = bopt['gp_params']
+        gp_params_names = bopt['gp_params_names']
+        cost_baseline = self.data['cost_baseline']
+        cost_bopt = self.data['cost_bopt']
+        temp_bl = [np.mean(cost_baseline),np.std(cost_baseline)]
+        temp_bo = [np.mean(cost_bopt), np.std(cost_bopt)]
+         
+        print('Bopt params')
+        self._print_helper(gp_params_names, gp_params)
+        print('\n')
+        print('Baseline stats')
+        self._print_helper(['mean', 'standard dev.'], temp_bl)
+        print('Bopt stats')
+        self._print_helper(['mean', 'standard dev.'], temp_bo)
+    
+    
+    def quick_summary(self):
+        self.bopt_summary()
+        self.plot_baselines(same_axis=True)
+        self.plot_convergence()
+        self.plot_final_params()
+        self.plot_param_trajectories()
+        self.plot_circ()
+ 
+# These don't really need to be in the class, but thought I'd hid them here to reduce ut
+    
+    
+    def _diff_between_x(self, X_in):
+        """ Computes the euclidian distance between adjacent X values
+        + Might need to vectorize this in future"""
+        dX = X_in[1:] - X_in[0:-1]
+        dX = [dx.dot(dx) for dx in dX]
+        dX = np.sqrt(np.array(dX))
+        return dX
+    
+    def _decide_plot_layout(self, n):
+        if n < 3:
+            return n, 1
+        elif n == 4:
+            return 2, 2
+        elif n > 4 and n <= 6:
+            return 2, 3
+        elif n > 6 and n <= 9:
+            return 3, 3
+        elif n > 9 and n <= 15:
+            return 3, 5
+        elif n == 16:
+            return 4, 4
+        elif n > 16:
+            x = int(np.ceil(np.sqrt(n)))
+            return x, x
+    
+    def _print_helper(self, key, val, min_len = 25):
+        for ii in range(len(key)):
+            temp_v = val[ii]
+            if type(temp_v) == float or type(temp_v) == int or type(temp_v) == np.float64:
+                temp_v = '%s' % float('%.3g' % val[ii])
+            else:
+                temp_v = val[ii]
+            if len(key[ii]) < min_len:
+                pad_len = min_len - len(key[ii])
+                pree = ' '*pad_len
+                temp_k = pree + key[ii]
+                
+            print(temp_k + ':  ' + temp_v)
