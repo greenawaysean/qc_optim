@@ -271,7 +271,6 @@ class results():
         self.reduced_meta = reduced_meta
         self.data = self._load(f_name)
 
-
     def _load(self, f_name):
         """ This doesn't work yet. Looks like I might have to make a data class 
             (was hoping to avoid this)"""
@@ -294,7 +293,6 @@ class results():
             else:
                 running_tot.append(key)
         return running_tot
-
     
     def plot_convergence(self):
         """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
@@ -310,7 +308,6 @@ class results():
         plt.xlabel('itt')
         plt.ylabel('Y')
         plt.show()
-
 
     def plot_baselines(self,
                        same_axis=False,
@@ -341,7 +338,6 @@ class results():
             std = np.round(np.std(bopt), 4)
             plt.title('Opt: mean: {} \n std: {}'.format(mean,std))
         plt.show()
-
     
     def plot_circ(self):
         """ Displays quick info about the ansatz circuit:
@@ -354,7 +350,6 @@ class results():
         circ.draw(output='mpl',ax=ax,scale=0.4, vertical_compression='high')
         plt.title('Backend: {} \n Circuit depths = {} \pm {}'.format(meta['backend_name'], np.mean(depth), np.std(depth)))
         plt.show()
-            
             
     def plot_final_params(self,
                      x_sol=None):
@@ -382,8 +377,6 @@ class results():
         plt.ylabel('Parameter value')
         plt.title('Sol vs Seen')# (Dist = {})'.format(np.round(distance,4)))
         plt.show()
-        
-        
     
     def plot_param_trajectories(self):
         """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
@@ -411,7 +404,7 @@ class results():
         temp_bl = [np.mean(cost_baseline),np.std(cost_baseline)]
         temp_bo = [np.mean(cost_bopt), np.std(cost_bopt)]
         improvement = 100*(temp_bo[0] / temp_bl[0] - 1)
-        CI = improvement / (np.sqrt(temp_bo[1] * temp_bl[1]  ))
+        CI = improvement / (100* np.sqrt(temp_bo[1] * temp_bl[1]  ))
          
         print('Bopt params')
         self._print_helper(gp_params_names, gp_params)
@@ -432,8 +425,6 @@ class results():
         self.plot_circ()
  
 # These don't really need to be in the class, but thought I'd hid them here to reduce ut
-    
-    
     def _diff_between_x(self, X_in):
         """ Computes the euclidian distance between adjacent X values
         + Might need to vectorize this in future"""
