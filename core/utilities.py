@@ -22,6 +22,8 @@ import os, socket, sys
 import dill
 import string
 import random
+import matplotlib.pyplot as plt
+pi = np.pi
 
 NB_SHOTS_DEFAULT = 256
 OPTIMIZATION_LEVEL_DEFAULT = 1
@@ -261,6 +263,7 @@ def gen_pkl_file(cost,
 
 
 class results():
+    import matplotlib.pyplot as plt
     """ Results class to quickly analize a pkl file
         Will be bcakward compatible with .plk from 07/04/2020"""
     def __init__(self, f_name, reduced_meta = True):
@@ -317,8 +320,6 @@ class results():
         baseline = self.data['cost_baseline']
         bopt = self.data['cost_bopt']
         all_data = np.squeeze(np.concatenate([baseline, bopt]))
-        x_min = 0.9*min(all_data)
-        x_max = 1.1*max(all_data)
         if same_axis:
             plt.hist(baseline, bins,label='base')
             plt.hist(bopt, bins,label='bopt')
@@ -388,7 +389,6 @@ class results():
         """ Plots the convergence of the Bopt vales (hope I've done' this right)"""
         bopt = self.data['bopt_results']
         X = bopt['X']
-        Y = bopt['Y']
         nb_params = len(X[0])
         plt_x, plt_y = self._decide_plot_layout(nb_params)
         fig, ax_vec = plt.subplots(plt_x, plt_y, sharex=True, sharey=True)
@@ -410,6 +410,8 @@ class results():
         cost_bopt = self.data['cost_bopt']
         temp_bl = [np.mean(cost_baseline),np.std(cost_baseline)]
         temp_bo = [np.mean(cost_bopt), np.std(cost_bopt)]
+        improvement = 100*(temp_bo[0] / temp_bl[0] - 1)
+        CI = improvement / (np.sqrt(temp_bo[1] * temp_bl[1]  ))
          
         print('Bopt params')
         self._print_helper(gp_params_names, gp_params)
@@ -418,7 +420,8 @@ class results():
         self._print_helper(['mean', 'standard dev.'], temp_bl)
         print('Bopt stats')
         self._print_helper(['mean', 'standard dev.'], temp_bo)
-    
+        print('Net Improvement')
+        self._print_helper(['% improvement', 'relative to sigma'], [improvement, CI])
     
     def quick_summary(self):
         self.bopt_summary()
