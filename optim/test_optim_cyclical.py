@@ -31,6 +31,8 @@ inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT,
                                      optim_lvl=OPTIMIZATION_LEVEL_DEFAULT,
                                      initial_layout=SINGAPORE_GATE_MAP)
 
+inst_ghz = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
+                                         optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
 # ===================
 # Define ansatz and initialize costfunction
 # Todo: generalize to abitrary nb of qubits
@@ -55,6 +57,8 @@ def ansatz_easy(params, barriers = False):
     c.cu1(np.pi,5,0)
     if barriers: c.barrier()
     return c
+
+
 
 
 
@@ -86,6 +90,26 @@ def ansatz_hard(params, barriers = False):
     return c
 
 
+
+
+def ghz_circ(params, barriers = False):
+    logical_qubits = qk.QuantumRegister(3, 'll')
+
+    c = qk.QuantumCircuit(logical_qubits)
+    c.rx(params[0], 0)
+    c.rx(params[1], 1)
+    c.ry(params[2], 2)
+    if barriers: c.barrier()
+    c.cnot(0,2) 
+    c.cnot(1,2) 
+    if barriers: c.barrier()
+    c.rx(params[3], 0)
+    c.rx(params[4], 1)
+    c.ry(params[5], 2)
+    if barriers: c.barrier()
+    return c
+
+
 ### (ansatz, nb_params, nb_qubits, sol)
 pb_infos = [(ansatz_easy, 6, 6, np.pi/2 * np.ones(shape=(6,))),
              (ansatz_hard, 24, 6, None)]
@@ -96,8 +120,11 @@ ansatz, nb_p, nb_q, x_sol = pb_infos[1]
 # cost2 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 # cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 
-cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
+#cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
 
+
+cost_cost = cost.GHZPauliCost(ansatz=ghz_circ, N=3, 
+                              instance=inst_ghz, nb_params=6)
 
 if bem.current_backend.name() != 'qasm_simulator':
     ansatz_transpiled = copy.deepcopy(cost_cost.main_circuit[0])
