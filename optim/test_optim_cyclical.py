@@ -66,16 +66,31 @@ def ansatz_hard(params, barriers = False):
     """ Ansatz to be refined"""
     logical_qubits = qk.QuantumRegister(6, 'logicals')
     c = qk.QuantumCircuit(logical_qubits)
-    c.u2(params[0], params[1], 0)
-    c.u2(params[2], params[3], 1)
-    c.u2(params[4], params[5], 2)
-    c.u2(params[6], params[7], 3)
-    c.u2(params[8], params[9], 4)
-    c.u2(params[10], params[11], 5)
+    c.h(0)
+    c.h(1)
+    c.h(2)
+    c.h(3)
+    c.h(4)
+    c.h(5)
+    if barriers: c.barrier()
+    c.ry(params[0], 0)
+    c.ry(params[1], 1)
+    c.ry(params[2], 2)
+    c.ry(params[3], 3)
+    c.ry(params[4], 4)
+    c.ry(params[5], 5)
     if barriers: c.barrier()
     c.cnot(0,1) 
     c.cnot(2,3) 
     c.cnot(4,5)
+    if barriers: c.barrier()
+    c.rz(params[6], 0)
+    c.rz(params[7], 1)
+    c.rz(params[8], 2)
+    c.rz(params[9], 3)
+    c.rz(params[10], 4)
+    c.rz(params[11], 5)
+    if barriers: c.barrier()
     c.cnot(1,2) 
     c.cnot(3,4)
     c.cnot(5,0)
@@ -92,7 +107,7 @@ def ansatz_hard(params, barriers = False):
 
 
 
-def ghz_circ(params, barriers = False):
+def ansatz_ghz(params, barriers = False):
     logical_qubits = qk.QuantumRegister(3, 'll')
 
     c = qk.QuantumCircuit(logical_qubits)
@@ -112,19 +127,14 @@ def ghz_circ(params, barriers = False):
 
 ### (ansatz, nb_params, nb_qubits, sol)
 pb_infos = [(ansatz_easy, 6, 6, np.pi/2 * np.ones(shape=(6,))),
-             (ansatz_hard, 24, 6, None)]
-ansatz, nb_p, nb_q, x_sol = pb_infos[1]
+             (ansatz_hard, 24, 6, None), 
+             (ansatz_ghz, 6, 3, np.array([3., 3., 2., 3., 3., 1.]) * np.pi/2)]
+ansatz, nb_p, nb_q, x_sol = pb_infos[2]
 # different cost functions 
-# fid = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
-# fid_test = cost.GraphCyclPauliCost(ansatz=ansatz, instance = inst_test, N=nb_q, nb_params=nb_p)
-# cost2 = cost.GraphCyclWitness2Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
-# cost1 = cost.GraphCyclWitness1Cost(ansatz=ansatz, instance = inst, N=nb_q, nb_params=nb_p)
 
-#cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
+cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
 
-
-cost_cost = cost.GHZPauliCost(ansatz=ghz_circ, N=3, 
-                              instance=inst_ghz, nb_params=6)
+cost_cost = cost.GHZPauliCost(ansatz=ansatz, N=nb_q, instance=inst_ghz, nb_params=nb_p)
 
 if bem.current_backend.name() != 'qasm_simulator':
     ansatz_transpiled = copy.deepcopy(cost_cost.main_circuit[0])
@@ -190,7 +200,10 @@ Bopt.plot_convergence()
 
 x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
 
-baseline_values = cost_cost.shot_noise(x_sol, 10)
+if type(x_sol) != type(None):
+    baseline_values = cost_cost.shot_noise(x_sol, 10)
+else:
+    baseline_values = None
 bopt_values = cost_cost.shot_noise(x_opt_pred, 10)
 
 
