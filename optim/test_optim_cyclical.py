@@ -18,7 +18,12 @@ import copy
 
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 1
-SINGAPORE_GATE_MAP = [1,2,3,8,7,6] # Maybe put this in bem
+SINGAPORE_GATE_MAP_CYC_6 = [1,2,3,8,7,6] # Maybe put this in bem
+SINGAPORE_GATE_MAP_CYC_6_EXTENDED = [2, 6, 10, 12, 14, 8] # Maybe put this in bem
+ROCHESTER_GATE_MAP_GHZ_3_SWAPSx0 = [1,3,2]
+ROCHESTER_GATE_MAP_GHZ_3_SWAPSx2 = [0,4,2]
+ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4 = [5,6,2]
+
 
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
@@ -29,10 +34,11 @@ chosen_device = int(input('SELECT IBM DEVICE:'))
 bem.get_backend(chosen_device, inplace=True)
 inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
                                      optim_lvl=OPTIMIZATION_LEVEL_DEFAULT,
-                                     initial_layout=SINGAPORE_GATE_MAP)
+                                     initial_layout=SINGAPORE_GATE_MAP_CYC_6_EXTENDED)
 
 inst_ghz = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
-                                         optim_lvl=OPTIMIZATION_LEVEL_DEFAULT)
+                                         optim_lvl=OPTIMIZATION_LEVEL_DEFAULT,
+                                         initial_layout=ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4)
 # ===================
 # Define ansatz and initialize costfunction
 # Todo: generalize to abitrary nb of qubits
@@ -48,19 +54,15 @@ def ansatz_easy(params, barriers = False):
     c.ry(params[4],4)
     c.ry(params[5],5)
     if barriers: c.barrier()
-    c.cu1(np.pi,0,1)
-    c.cu1(np.pi,2,3)
-    c.cu1(np.pi,4,5)
+    c.cz(0,1)
+    c.cz(2,3)
+    c.cz(4,5)
     if barriers: c.barrier()
-    c.cu1(np.pi,1,2)
-    c.cu1(np.pi,3,4)
-    c.cu1(np.pi,5,0)
+    c.cz(1,2)
+    c.cz(3,4)
+    c.cz(5,0)
     if barriers: c.barrier()
     return c
-
-
-
-
 
 def ansatz_hard(params, barriers = False):
     """ Ansatz to be refined"""
@@ -104,11 +106,8 @@ def ansatz_hard(params, barriers = False):
     if barriers: c.barrier()
     return c
 
-
-
-
 def ansatz_ghz(params, barriers = False):
-    logical_qubits = qk.QuantumRegister(3, 'll')
+    logical_qubits = qk.QuantumRegister(3, 'logicals')
 
     c = qk.QuantumCircuit(logical_qubits)
     c.rx(params[0], 0)
@@ -132,9 +131,10 @@ pb_infos = [(ansatz_easy, 6, 6, np.pi/2 * np.ones(shape=(6,))),
 ansatz, nb_p, nb_q, x_sol = pb_infos[2]
 # different cost functions 
 
-cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
 
 cost_cost = cost.GHZPauliCost(ansatz=ansatz, N=nb_q, instance=inst_ghz, nb_params=nb_p)
+
+# cost_cost = cost.GraphCyclPauliCost(ansatz=ansatz, N=nb_q, instance=inst, nb_params=nb_p)
 
 if bem.current_backend.name() != 'qasm_simulator':
     ansatz_transpiled = copy.deepcopy(cost_cost.main_circuit[0])
@@ -212,20 +212,4 @@ ut.gen_pkl_file(cost_cost, Bopt,
                 bopt_values = bopt_values, 
                 dict_in = {'bo_args':bo_args})
 
-
-
-# # ===================
-# # BO Optim: no noise / Use of fidelity
-# # 20/25 works
-# #EPS = np.pi/2
-# #DOMAIN_RED = [(x-EPS, x+EPS) for x in X_SOL]
-# # ===================
-
-
-# # ===================
-# # BO Optim
-# # No noise / Cost Function 2 
-# # seems to work better with this split 30/70 not so much with 50/50 and more 
-# # exploration
-# # ===================
 

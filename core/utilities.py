@@ -54,7 +54,7 @@ class BackendManager():
     """
     def __init__(self):
         provider_free = qk.IBMQ.load_account()
-        if 'kkhosla' in os.getcwd(): # or 'kiran' in os.getcwd():
+        if 'kkhosla' in os.getcwd() or 'kiran' in os.getcwd():
             self.LIST_OF_DEVICES = FULL_LIST_DEVICES
             provider_imperial = qk.IBMQ.get_provider(hub='ibmq', group='samsung', project='imperial')
             self.provider_list = {'free':provider_free, 'imperial':provider_imperial}
@@ -277,7 +277,10 @@ class results():
         with open(f_name, 'rb') as f:
             data = dill.load(f)
         if self.reduced_meta:
-            data['meta'] = [data['meta'][0]]
+            if 'meta' in data:
+                data['meta'] = [data['meta'][0]]
+            else:
+                data['meta'] = None
         return data
 
     def print_all_keys(self, dict_in=None):
@@ -315,8 +318,11 @@ class results():
         """ Plots baseline histograms with mean and variance of each, comparing
             the Bopt values to the true baseilne values"""
         baseline = self.data['cost_baseline']
+        baseline = np.squeeze(baseline)
+        if None in baseline:
+            baseline = [1]
         bopt = self.data['cost_bopt']
-        all_data = np.squeeze(np.concatenate([baseline, bopt]))
+        bopt = np.squeeze(bopt)
         if same_axis:
             plt.hist(baseline, bins,label='base')
             plt.hist(bopt, bins,label='bopt')
@@ -363,15 +369,15 @@ class results():
         
         plt.plot(x_obs, 'rd', label='obs: ({})'.format(y_obs))
         plt.plot(x_pred, 'k*', label='pred: ({})'.format(y_pred))
-        if x_sol == None:
+        if type(x_sol) == type(None):
             try:
                 x_sol = self.data['x_sol']
             except:
                 pass
-        if x_sol != None:
+        if type(x_sol) != type(None):
             plt.plot(x_sol, 'bo', label='sol: ({})'.format(1))
             x_sol = np.array(x_sol)
-            distance = _diff_between_x(np.array([x_sol, x_pred]))
+            distance = self._diff_between_x(np.array([x_sol, x_pred]))
         plt.legend()
         plt.xlabel('Parameter #')
         plt.ylabel('Parameter value')
@@ -400,7 +406,10 @@ class results():
         gp_params = bopt['gp_params']
         gp_params_names = bopt['gp_params_names']
         cost_baseline = self.data['cost_baseline']
+        cost_baseline = np.squeeze(cost_baseline)
+        if None in cost_baseline: cost_baseline = [1]
         cost_bopt = self.data['cost_bopt']
+        cost_bopt = np.squeeze(cost_bopt)
         temp_bl = [np.mean(cost_baseline),np.std(cost_baseline)]
         temp_bo = [np.mean(cost_bopt), np.std(cost_bopt)]
         improvement = 100*(temp_bo[0] / temp_bl[0] - 1)
