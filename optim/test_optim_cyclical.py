@@ -17,7 +17,7 @@ import GPyOpt
 import copy
 
 NB_SHOTS_DEFAULT = 8192
-OPTIMIZATION_LEVEL_DEFAULT = 1
+OPTIMIZATION_LEVEL_DEFAULT = 2
 SINGAPORE_GATE_MAP_CYC_6 = [1,2,3,8,7,6] # Maybe put this in bem
 SINGAPORE_GATE_MAP_CYC_6_EXTENDED = [2, 6, 10, 12, 14, 8] # Maybe put this in bem
 ROCHESTER_GATE_MAP_GHZ_3_SWAPSx0 = [1,3,2]
@@ -38,7 +38,7 @@ inst = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT,
 
 inst_ghz = bem.gen_instance_from_current(nb_shots=NB_SHOTS_DEFAULT, 
                                          optim_lvl=OPTIMIZATION_LEVEL_DEFAULT,
-                                         initial_layout=ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4)
+                                         initial_layout=ROCHESTER_GATE_MAP_GHZ_3_SWAPSx2)
 # ===================
 # Define ansatz and initialize costfunction
 # Todo: generalize to abitrary nb of qubits
