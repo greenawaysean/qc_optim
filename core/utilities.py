@@ -23,6 +23,7 @@ import dill
 import string
 import random
 import matplotlib.pyplot as plt
+import defined_circuits
 pi = np.pi
 
 NB_SHOTS_DEFAULT = 256
@@ -314,7 +315,8 @@ class results():
 
     def plot_baselines(self,
                        same_axis=False,
-                       bins=30):
+                       bins=30,
+                       axis=[0, 1, 0, 5]):
         """ Plots baseline histograms with mean and variance of each, comparing
             the Bopt values to the true baseilne values"""
         baseline = self.data['cost_baseline']
@@ -353,7 +355,7 @@ class results():
         depth = self.data['depth']
         meta = self.data['meta'][0]
         fig, ax = plt.subplots(1,1)
-        circ.draw(output='mpl',ax=ax,scale=0.4, vertical_compression='high')
+        circ.draw(output='mpl',ax=ax,scale=0.4, idle_wires=False)
         plt.title('Backend: {} \n Circuit depths = {} \pm {}'.format(meta['backend_name'], np.mean(depth), np.std(depth)))
         plt.show()
             
@@ -377,7 +379,6 @@ class results():
         if type(x_sol) != type(None):
             plt.plot(x_sol, 'bo', label='sol: ({})'.format(1))
             x_sol = np.array(x_sol)
-            distance = self._diff_between_x(np.array([x_sol, x_pred]))
         plt.legend()
         plt.xlabel('Parameter #')
         plt.ylabel('Parameter value')
@@ -472,3 +473,5 @@ class results():
                 temp_k = pree + key[ii]
                 
             print(temp_k + ':  ' + temp_v)
+
+

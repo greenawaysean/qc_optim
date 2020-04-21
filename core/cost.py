@@ -96,6 +96,7 @@ class Cost():
         #define main circuit, i.e. without measurements
         if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
             self._qk_vars = list(ansatz.parameters)
+            self._reorder_params()
             self.main_circuit = ansatz.copy()
             #self._main_circuit.remove_final_measurements()
         else:
@@ -162,7 +163,15 @@ class Cost():
         """ Generate qiskit variables to be bound to a circuit"""
         name_params = ['R'+str(i) for i in range(self.nb_params)]
         self._qk_vars = [qk.circuit.Parameter(n) for n in name_params]
-                
+        
+    def _reorder_params(self):
+        names = [p.name.split('R')[1] for p in self._qk_vars]
+        di = {n:p for n,p in zip(names, self._qk_vars)}
+        reordered = []
+        for ii in range(self.nb_params):
+            reordered.append(di[str(ii)])
+        self._qk_vars = reordered
+                    
     def _init_res(self):
         """ Flush the res accumulated so far """
         self._res = []
@@ -613,6 +622,104 @@ def bind_params(circ, param_values, param_variables):
 
 
 
+
+class Batch():
+    """ New class that accepts a list of ansatz ciruits and will package them
+        together to to run more efficiently. Also has methods to update a list
+        of Basiean optimizers with new results"""
+    def __init__(self, gate_map_list, ansatz, cost_function, 
+                 nb_params, nb_qubits,
+                 be_manager, nb_shots, optim_lvl):
+        self.ansatz = ansatz
+        self.cost_function = cost_function
+        self._backend_manager = be_manager
+        self.instance = be_manager.gen_instance_from_current(nb_shots=nb_shots,
+                                                             optim_lvl=optim_lvl)
+        self._instance_list = self._gen_inst_list(gate_map_list=gate_map_list,
+                                                  nb_shots=nb_shots,
+                                                  optim_lvl=optim_lvl)
+        self.cost_list = self._batch_create(nb_params=nb_params,
+                                            nb_qubits=nb_qubits)
+   
+
+    
+    def __call__(self, param_list):
+        """ Efficient call to IBMQ devices that packages everything as a single job
+            TODO: add support for spreading across multiple jobs if > 900 circs
+            TODO: add suport for multiple parameters/circuit"""
+        assert len(param_list) == len(self.cost_list), "Can only send 1 parameter point per circuit. "
+        circs_to_ex = self._batch_package(param_list)
+        results_obj = self.instance.execute(circs_to_ex, had_transpiled=True)
+        results = self._batch_evaluate_results(results_obj)
+        return results
+    
+    def _gen_inst_list(self, gate_map_list, nb_shots, optim_lvl):
+        inst_list = []
+        for gate_map in gate_map_list:
+            inst = self._backend_manager.gen_instance_from_current(nb_shots=nb_shots,
+                                                                   optim_lvl=optim_lvl,
+                                                                   initial_layout=gate_map)
+            inst_list.append(inst)
+        return inst_list
+
+    def _batch_create(self, nb_params, nb_qubits):
+        """ Returns a list of cost classes for each of the saved circuits.
+            file names, cost_function and instance MUST be spesified
+            TODO: enable input list of cost_classes and params/qubits etc...
+            TODO: try getting nb_params, nb_qubits from save file"""
+        cost_list = []
+        cost_function = self.cost_function
+        for inst in self._instance_list:
+            cost_list.append(cost_function(ansatz = self.ansatz,
+                                           N = nb_qubits, 
+                                           instance = inst, 
+                                           nb_params = nb_params))
+        return cost_list
+    
+    
+    def _batch_package(self, param_list):
+        """ Takes ONE parameter per cost function and returns a list of circuits 
+            that can be executed in a single job. """
+        cost_list = self.cost_list
+        circs_to_ex = []
+        for c, p in zip(cost_list, param_list):
+            circs_to_ex += bind_params(c.meas_circuits, p, c._qk_vars)
+        assert len(circs_to_ex) < 900, "Total number of measurement circs do not fit in single job."
+        return circs_to_ex
+    
+    
+    def _batch_evaluate_results(self, results_obj):
+        """ Uses each element in the batch to evaluate the cost function from the given results object.
+            Currently only works for SINGLE parameter per cost class \n
+            + waht does this look like \n
+            * and this \n
+            - and thins"""
+        evaluation_list = []
+        cost_list = self.cost_list
+        ct = 0
+        for cost_obj in cost_list: # for every cost in list
+            relevant_counts = [] 
+            for ii in range(len(cost_obj.meas_circuits)): # find relevant results
+                relevant_counts += [results_obj.get_counts(ii + ct)]
+            ct += (ii + 1)
+            evaluation_list.append(cost_obj._meas_func(relevant_counts))
+        return np.array(evaluation_list)
+
+
+    def get_new_param_points(self, bo_list):
+        [bopt._update_model(bopt.normalization_type) for bopt in bo_list] # to verif
+        x_new = [bopt._compute_next_evaluations() for bopt in bo_list]
+        x_new = np.squeeze(x_new)
+        return x_new
+    
+    
+    def update_bo(self, bo_list, x_new, y_new):
+        for ii in range(len(bo_list)):
+            bo_list[ii].X = np.vstack((bo_list[ii].X, x_new[ii]))
+            bo_list[ii].Y = np.vstack((bo_list[ii].Y, y_new[ii]))
+
+# -------------------------------------------------------------- #
+
 if __name__ == '__main__':
     from qiskit.test.mock import FakeRochester
     fake = FakeRochester() # not working
@@ -742,4 +849,5 @@ if __name__ == '__main__':
         assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
         assert  np.abs(cost2full_rdm - cost2_rdm) < 0.1, "both cost function should be closed"
         
-        
+
+
