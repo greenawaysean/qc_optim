@@ -110,7 +110,8 @@ class BackendManager():
     def gen_instance_from_current(self, nb_shots = NB_SHOTS_DEFAULT, 
                      optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
                      noise_model = None, 
-                     initial_layout=None):
+                     initial_layout=None,
+                     seed_transpiler=None):
         """ Generate an instance from the current backend
         Not sure this is needed here: 
             + maybe building an instance should be decided in the main_script
@@ -129,7 +130,8 @@ class BackendManager():
             initial_layout = {logical_qubits[ii]:initial_layout[ii] for ii in range(nb_qubits)}
         instance = qk.aqua.QuantumInstance(self.current_backend, shots=nb_shots,
                             optimization_level=optim_lvl, noise_model= noise_model,
-                            initial_layout=initial_layout)
+                            initial_layout=initial_layout,
+                            seed_transpiler=seed_transpiler)
         print('Generated a new quantum instance')
         return instance
 

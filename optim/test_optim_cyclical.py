@@ -18,7 +18,6 @@ ut.add_path_GPyOpt()
 import GPyOpt
 import copy
 import defined_circuits
-from joblib import Memory
 
 
 

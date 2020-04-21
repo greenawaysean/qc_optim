@@ -1,5 +1,5 @@
+*.ipynb
 _*
 /results_pkl
-/core/Summary.ipynb
 /core/.ipynb_checkpoints
 

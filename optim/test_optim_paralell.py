@@ -16,7 +16,7 @@ import cost as cost
 ut.add_path_GPyOpt()
 import GPyOpt
 import defined_circuits
-
+import matplotlib.pyplot as plt
 
 
 NB_SHOTS_DEFAULT = 8192
@@ -31,14 +31,14 @@ ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4 = [5,6,2] # might actually be 5 dheck/rerun
 ROCHESTER_GATE_MAP_GHZ_3_SWAPSx5 = [5,13,2] # might actually be 6 dheck/rerun
 ROCHESTER_GATE_MAP_GHZ_3_SWAPSx6 = [9,13,2] # might actually be 7 dheck/rerun
 
+TRANSPILER_SEED_DEFAULT = 10
+
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
 
-try:
-    bem
-except:
-    bem = ut.BackendManager()
+
+bem = ut.BackendManager()
 bem.get_current_status()
 chosen_device = int(input('SELECT IBM DEVICE:'))
 bem.get_backend(chosen_device, inplace=True)
@@ -63,14 +63,9 @@ multi_cost = cost.Batch(gate_map_list = gate_map_list,
                         nb_qubits = nb_q,
                         be_manager = bem,
                         nb_shots = NB_SHOTS_DEFAULT,
-                        optim_lvl = OPTIMIZATION_LEVEL_DEFAULT)
+                        optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
+                        seed = TRANSPILER_SEED_DEFAULT)
 
-cs0 = multi_cost.cost_list[0]
-cs1 = multi_cost.cost_list[1]
-
-
-cs0.main_circuit.draw(idle_wires=False)
-cs1.main_circuit.draw(idle_wires=False)
 
 
 keep_going = str(input('Everything_look okay?'))
@@ -78,8 +73,8 @@ if keep_going != 'y':
     this_will_throw_and_error
 
 
-NB_INIT = 50
-NB_ITER = 10
+NB_INIT = 5
+NB_ITER = 5
 DOMAIN_FULL = [(0, 2*np.pi) for i in range(nb_p)]
 DOMAIN_BO = [{'name': str(i), 'type': 'continuous', 'domain': d} for i, d in enumerate(DOMAIN_FULL)]
 def dynamics_weight(n_iter):
@@ -105,7 +100,6 @@ for cst in multi_cost.cost_list:
 #  Run opt using the nice efficient class
 # ======================== /
 for ii in range(NB_ITER):
-    
     x_new = multi_cost.get_new_param_points(bo_list)
     y_new = multi_cost(x_new)
     multi_cost.update_bo(bo_list, x_new, y_new)
@@ -120,14 +114,15 @@ for bopt in bo_list:
     bopt.run_optimization(max_iter = 0, eps = 0) 
 
 
-
-Bopt = bo_list[1]
-# Results found
-(x_seen, y_seen), (x_exp,y_exp) = Bopt.get_best()
-#fid_test(x_seen)
-#fid_test(x_exp)
-print(Bopt.model.model)
-Bopt.plot_convergence()
+for bo in bo_list:
+    # Results found
+    (x_seen, y_seen), (x_exp,y_exp) = bo.get_best()
+    #fid_test(x_seen)
+    #fid_test(x_exp)
+    print(bo.model.model)
+    bo.plot_convergence()
+    plt.show()
+    x_opt_pred = bo.X[np.argmin(bo.model.predict(bo.X, with_noise=False)[0])]
 
 
 
@@ -137,7 +132,6 @@ Bopt.plot_convergence()
 # Get a baseline to compare to BO and save result
 # ===================
 
-x_opt_pred = Bopt.X[np.argmin(Bopt.model.predict(Bopt.X, with_noise=False)[0])]
 
 # if type(x_sol) != type(None):
 #     baseline_values = cost_cost.shot_noise(x_sol, 10)

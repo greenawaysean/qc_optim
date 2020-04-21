@@ -6,7 +6,7 @@ Created on Tue Feb 25 18:11:28 2020
 @author: fred
 TODO: (SOON) implement more general graph states 
 TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
-TODO: (SOON) Concatenated Cost Functions
+DONE: See new class - Batch Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
 TODO: (LATER) implement sampling (of the measurement settings) strategy
 
@@ -98,10 +98,12 @@ class Cost():
             self._qk_vars = list(ansatz.parameters)
             self._reorder_params()
             self.main_circuit = ansatz.copy()
+            assert False, "This functionality is broken for now. Will update to allow passing LIST of meas_circs"
             #self._main_circuit.remove_final_measurements()
         else:
             self._gen_qk_vars()
             main_circuit = ansatz(self._qk_vars)
+            self._untranspiled_main_circuit = main_circuit
             self.main_circuit = self.instance.transpile(main_circuit)[0]
         
         # Hacky should be careful: if transpiled needs to add measurement to
@@ -116,9 +118,10 @@ class Cost():
         self.qubits_indx = [self.log2phys[i] for i in range(self.nb_qubits)]
         
         # create measurable circuits
-        self.meas_circuits = gen_meas_circuits(self.main_circuit, 
-                                    self._list_meas, self.qubits_indx)
-        
+        self.meas_circuits = gen_meas_circuits(self._untranspiled_main_circuit, 
+                                               self._list_meas)
+        if type(ansatz) == type(lambda x:1):
+            self.meas_circuits = self.instance.transpile(self.meas_circuits)
         
         self.err_corr = error_correction
         if(self.err_corr):
@@ -267,6 +270,7 @@ def compare_layout(circ1, circ2):
         So far: compare the full layout"""
     test = True
     test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
+    test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
     return test
 
 #======================#
@@ -625,12 +629,14 @@ def bind_params(circ, param_values, param_variables):
 
 class Batch():
     """ New class that accepts a list of ansatz ciruits and will package them
-        together to to run more efficiently. Also has methods to update a list
-        of Basiean optimizers with new results"""
+        together to to run more efficiently in a queue. Also has methods to update a list
+        of Basiean optimizers with new results 
+        TODO: impliment all boupdate within this class?"""
     def __init__(self, gate_map_list, ansatz, cost_function, 
                  nb_params, nb_qubits,
-                 be_manager, nb_shots, optim_lvl):
+                 be_manager, nb_shots, optim_lvl, seed):
         self.ansatz = ansatz
+        self.seed = seed
         self.cost_function = cost_function
         self._backend_manager = be_manager
         self.instance = be_manager.gen_instance_from_current(nb_shots=nb_shots,
@@ -658,7 +664,8 @@ class Batch():
         for gate_map in gate_map_list:
             inst = self._backend_manager.gen_instance_from_current(nb_shots=nb_shots,
                                                                    optim_lvl=optim_lvl,
-                                                                   initial_layout=gate_map)
+                                                                   initial_layout=gate_map,
+                                                                   seed_transpiler=self.seed)
             inst_list.append(inst)
         return inst_list
 
@@ -674,6 +681,12 @@ class Batch():
                                            N = nb_qubits, 
                                            instance = inst, 
                                            nb_params = nb_params))
+        test = True
+        for c in cost_list:
+            test &= c.check_depth()
+            if inst.backend.name() != 'qasm_simulator':
+                test &= c.check_layout()
+        assert test, "Circuits did not pass basic checks"
         return cost_list
     
     
