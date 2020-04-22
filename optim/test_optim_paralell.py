@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 50
+NB_INIT = 100
 NB_ITER = 50
 
 
@@ -108,7 +108,7 @@ for cst in multi_cost.cost_list:
 # ======================== /
 for ii in range(NB_ITER):
     x_new = multi_cost.get_new_param_points(bo_list)
-    y_new = 1 - multi_cost(x_new)
+    y_new = 1 - np.array(multi_cost(x_new))
     multi_cost.update_bo_inplace(bo_list, x_new, y_new)
     for bo in bo_list:
         bo.acquisition.exploration_weight = dynamics_weight(ii)
@@ -128,6 +128,7 @@ for bo in bo_list:
     bo.plot_convergence()
     plt.show()
     x_opt_pred.append(bo.X[np.argmin(bo.model.predict(bo.X, with_noise=False)[0])])
+
 
 # ======================== /
 # Get a baseline to compare to BO and save result
@@ -150,6 +151,7 @@ for cst, bo, bl_val, bo_val, bo_args in zip(multi_cost.cost_list,
     ut.gen_pkl_file(cst, bo, 
                     baseline_values = bl_val, 
                     bopt_values = bo_val, 
+                    path = '/home/kiran/Documents/onedrive/Active_Research/QuantumSimulation/BayesianStateOptimizaiton/qc_optim/results_pkl/',
                     info = 'cx' + str(cst.main_circuit.count_ops()['cx']) + '_',
                     dict_in = {'bo_args':bo_args,
                                'x_sol':x_sol})

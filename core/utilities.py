@@ -240,12 +240,13 @@ def gen_pkl_file(cost,
                  baseline_values = None, 
                  bopt_values = None,
                  info = '',
+                 path = '',
                  file_name = None,
                  dict_in = None):
     """ Streamlines save"""
     
     if file_name is None:
-        file_name = '_res_' + cost.instance.backend.name() 
+        file_name = path + '_res_' + cost.instance.backend.name() 
         file_name += '_' + str(cost.__class__).split('.')[1].split("'")[0] + '_'
         file_name += info
         file_name += ''.join([random.choice(string.ascii_letters) for ii in range(3)])

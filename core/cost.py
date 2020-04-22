@@ -706,8 +706,7 @@ class Batch():
         cost_list = []    
         if len(self.cost_function) > 1:
             # iter over cost functions
-            self.instance = self._instance_list[0]
-            instance = self.instance
+            instance = self._instance_list[0]
             ansatz = self.ansatz[0]
             for cf in self.cost_function:
                 cost_list.append(cf(ansatz = ansatz,
@@ -717,8 +716,7 @@ class Batch():
         elif len(self.ansatz) > 1:
             # iter over ansatz
             cost_function = self.cost_function[0]
-            self.instance = self._instance_list[0]
-            instance = self.instance
+            instance = self._instance_list[0]
             for ans in self.ansatz:
                 cost_list.append(cost_function(ansatz = ans,
                                                N = nb_qubits, 
