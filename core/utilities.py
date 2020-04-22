@@ -23,13 +23,13 @@ import dill
 import string
 import random
 import matplotlib.pyplot as plt
-import defined_circuits
+NoneType = type(None)
 pi = np.pi
 
 NB_SHOTS_DEFAULT = 256
 OPTIMIZATION_LEVEL_DEFAULT = 1
-FULL_LIST_DEVICES = ['ibmq_poughkeepsie', 'ibmq_paris', 'ibmq_singapore', 
-             'ibmq_rochester', 'qasm_simulator']
+FULL_LIST_DEVICES = ['ibmq_rochester', 'ibmq_paris', 'ibmq_singapore', 
+            'ibmq_qasm_simulator'] # '', ibmq_poughkeepsie
 # There may be more free devices
 FREE_LIST_DEVICES = ['ibmq_16_melbourne', 
                      # 'ibmq_vigo', 
@@ -39,6 +39,7 @@ FREE_LIST_DEVICES = ['ibmq_16_melbourne',
                      # 'ibmq_london',
                      # 'ibmq_ourense',
                      'qasm_simulator']
+
 
 
 
@@ -238,6 +239,7 @@ def gen_pkl_file(cost,
                  Bopt,
                  baseline_values = None, 
                  bopt_values = None,
+                 info = '',
                  file_name = None,
                  dict_in = None):
     """ Streamlines save"""
@@ -245,6 +247,7 @@ def gen_pkl_file(cost,
     if file_name is None:
         file_name = '_res_' + cost.instance.backend.name() 
         file_name += '_' + str(cost.__class__).split('.')[1].split("'")[0] + '_'
+        file_name += info
         file_name += ''.join([random.choice(string.ascii_letters) for ii in range(3)])
         file_name += '.pkl'
 
@@ -263,9 +266,22 @@ def gen_pkl_file(cost,
 
 
 
+def gate_maps(arg):
+    """ Stores usefull layouts for different devices"""
+    gate_maps_di = {'SINGAPORE_GATE_MAP_CYC_6': [1,2,3,8,7,6], # Maybe put this in bem
+                    'SINGAPORE_GATE_MAP_CYC_6_EXTENDED':[2, 6, 10, 12, 14, 8], # Maybe put this in bem
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx0':[1,3,2],
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx1':[0,3,2],
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx2':[0,4,2],
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx3':[0,6,2],    
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4':[5,6,2], # might actually be 5 dheck/rerun
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx5':[5,13,2], # might actually be 6 dheck/rerun
+                    'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx6':[9,13,2]} # might actually be 7 dheck/rerun
+    return gate_maps_di[arg]
 
 
-class results():
+
+class Results():
     import matplotlib.pyplot as plt
     """ Results class to quickly analize a pkl file
         Will be bcakward compatible with .plk from 07/04/2020"""
@@ -373,9 +389,9 @@ class results():
         
         plt.plot(x_obs, 'rd', label='obs: ({})'.format(y_obs))
         plt.plot(x_pred, 'k*', label='pred: ({})'.format(y_pred))
-        if type(x_sol) == type(None):
+        if type(x_sol) == NoneType:
             try:
-                x_sol = self.data['x_sol']
+                x_sol = self.data['other']['x_sol']
             except:
                 pass
         if type(x_sol) != type(None):
