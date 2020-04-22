@@ -77,7 +77,6 @@ multi_cost_cost = cost.Batch(gate_map = gate_map_list[0],
 
 # select single 
 multi_cost = multi_cost_antz
-
 # ======================== /
 #  Default BO args - consider passing this into an extension of Batch class
 # ======================== /
