@@ -53,19 +53,43 @@ gate_map_list = [ROCHESTER_GATE_MAP_GHZ_3_SWAPSx0,
                  ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4,
                  ROCHESTER_GATE_MAP_GHZ_3_SWAPSx5,
                  ROCHESTER_GATE_MAP_GHZ_3_SWAPSx6]
-gate_map_list = gate_map_list[:2]
-ansatz, nb_p, nb_q, x_sol = defined_circuits.GHZ_3qubits_6_params()
 
-multi_cost = cost.Batch(gate_map_list = gate_map_list, 
-                        ansatz = ansatz,
-                        cost_function = cost.GHZPauliCost,
-                        nb_params = nb_p, 
-                        nb_qubits = nb_q,
-                        be_manager = bem,
-                        nb_shots = NB_SHOTS_DEFAULT,
-                        optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
-                        seed = TRANSPILER_SEED_DEFAULT)
+ansatz0, nb_p, nb_q, x_sol = defined_circuits.GHZ_3qubits_6_params(0)
+ansatz1, nb_p, nb_q, x_sol = defined_circuits.GHZ_3qubits_6_params(1)
 
+multi_cost_gate = cost.Batch(gate_map = gate_map_list[:2], 
+                             ansatz = ansatz0,
+                             cost_function = cost.GHZPauliCost,
+                             nb_params = nb_p, 
+                             nb_qubits = nb_q,
+                             be_manager = bem,
+                             nb_shots = NB_SHOTS_DEFAULT,
+                             optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
+                             seed = TRANSPILER_SEED_DEFAULT)
+
+
+multi_cost_antz = cost.Batch(gate_map = gate_map_list[0], 
+                             ansatz = [ansatz0, ansatz1],
+                             cost_function = cost.GHZPauliCost,
+                             nb_params = nb_p, 
+                             nb_qubits = nb_q,
+                             be_manager = bem,
+                             nb_shots = NB_SHOTS_DEFAULT,
+                             optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
+                             seed = TRANSPILER_SEED_DEFAULT)
+
+
+multi_cost_cost = cost.Batch(gate_map = gate_map_list[0], 
+                             ansatz = ansatz0,
+                             cost_function = [cost.GHZPauliCost, cost.GHZWitness2Cost],
+                             nb_params = nb_p, 
+                             nb_qubits = nb_q,
+                             be_manager = bem,
+                             nb_shots = NB_SHOTS_DEFAULT,
+                             optim_lvl = OPTIMIZATION_LEVEL_DEFAULT,
+                             seed = TRANSPILER_SEED_DEFAULT)
+
+multi_cost = multi_cost_cost
 
 
 keep_going = str(input('Everything_look okay?'))
@@ -102,7 +126,7 @@ for cst in multi_cost.cost_list:
 for ii in range(NB_ITER):
     x_new = multi_cost.get_new_param_points(bo_list)
     y_new = multi_cost(x_new)
-    multi_cost.update_bo(bo_list, x_new, y_new)
+    multi_cost.update_bo_inplace(bo_list, x_new, y_new)
     for bo in bo_list:
         bo.acquisition.exploration_weight = dynamics_weight(ii)
 

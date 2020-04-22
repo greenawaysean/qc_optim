@@ -628,26 +628,27 @@ def bind_params(circ, param_values, param_variables):
 
 
 class Batch():
-    """ New class that accepts a list of ansatz ciruits and will package them
-        together to to run more efficiently in a queue. Also has methods to update a list
-        of Basiean optimizers with new results 
-        TODO: impliment all boupdate within this class?"""
-    def __init__(self, gate_map_list, ansatz, cost_function, 
+    """ New class that accepts a list of ansatz ciruits OR list of cost functinos 
+        OR list of gate maps, and will package them together to to run more 
+        efficiently in a queue. Also has methods to update a list of Basiean 
+        optimizers with new results 
+        TODO: allow class to accept pre-transpile circs as inputs
+        TODO: allow class to accept list of gate+cost+ansatz"""
+    def __init__(self, gate_map, ansatz, cost_function, 
                  nb_params, nb_qubits,
                  be_manager, nb_shots, optim_lvl, seed):
-        self.ansatz = ansatz
         self.seed = seed
-        self.cost_function = cost_function
         self._backend_manager = be_manager
+        self.ansatz = np.atleast_1d(ansatz).tolist()
+        self.cost_function = np.atleast_1d(cost_function).tolist()
+        self.gate_map = np.atleast_2d(gate_map).tolist()
         self.instance = be_manager.gen_instance_from_current(nb_shots=nb_shots,
                                                              optim_lvl=optim_lvl)
-        self._instance_list = self._gen_inst_list(gate_map_list=gate_map_list,
-                                                  nb_shots=nb_shots,
+        self._instance_list = self._gen_inst_list(nb_shots=nb_shots,
                                                   optim_lvl=optim_lvl)
         self.cost_list = self._batch_create(nb_params=nb_params,
                                             nb_qubits=nb_qubits)
    
-
     
     def __call__(self, param_list):
         """ Efficient call to IBMQ devices that packages everything as a single job
@@ -656,37 +657,56 @@ class Batch():
         assert len(param_list) == len(self.cost_list), "Can only send 1 parameter point per circuit. "
         circs_to_ex = self._batch_package(param_list)
         results_obj = self.instance.execute(circs_to_ex, had_transpiled=True)
-        results = self._batch_evaluate_results(results_obj)
-        return results
-    
-    def _gen_inst_list(self, gate_map_list, nb_shots, optim_lvl):
+        costs = self._batch_evaluate_results(results_obj)
+        return costs
+
+
+    def _gen_inst_list(self, nb_shots, optim_lvl):
+        gate_map = self.gate_map
         inst_list = []
-        for gate_map in gate_map_list:
+        for gm in gate_map:
             inst = self._backend_manager.gen_instance_from_current(nb_shots=nb_shots,
                                                                    optim_lvl=optim_lvl,
-                                                                   initial_layout=gate_map,
+                                                                   initial_layout=gm,
                                                                    seed_transpiler=self.seed)
             inst_list.append(inst)
         return inst_list
 
+
     def _batch_create(self, nb_params, nb_qubits):
-        """ Returns a list of cost classes for each of the saved circuits.
-            file names, cost_function and instance MUST be spesified
-            TODO: enable input list of cost_classes and params/qubits etc...
+        """ Returns a list of cost classes for each of inputs
+            TODO: enable input of list of gate maps, cost functions and ansatz's
             TODO: try getting nb_params, nb_qubits from save file"""
-        cost_list = []
-        cost_function = self.cost_function
-        for inst in self._instance_list:
-            cost_list.append(cost_function(ansatz = self.ansatz,
-                                           N = nb_qubits, 
-                                           instance = inst, 
-                                           nb_params = nb_params))
-        test = True
-        for c in cost_list:
-            test &= c.check_depth()
-            if inst.backend.name() != 'qasm_simulator':
-                test &= c.check_layout()
-        assert test, "Circuits did not pass basic checks"
+        if len(self.cost_function) > 1 and len(self.ansatz) > 1 and len(self.gate_map) > 1:
+            raise NotImplementedError()
+        cost_list = []    
+        if len(self.cost_function) > 1:
+            # iter over cost functions 
+            instance = self.instance
+            ansatz = self.ansatz[0]
+            for cf in self.cost_function:
+                cost_list.append(cf(ansatz = ansatz,
+                                    N = nb_qubits,
+                                    instance = instance,
+                                    nb_params = nb_params))
+        elif len(self.ansatz) > 1:
+            # iter over ansatz
+            cost_function = self.cost_function[0]
+            instance = self.instance
+            for ans in self.ansatz:
+                cost_list.append(cost_function(ansatz = ans,
+                                               N = nb_qubits, 
+                                               instance = instance, 
+                                               nb_params = nb_params))
+        elif len(self.gate_map) > 1:
+            # iter over gate map
+            cost_function = self.cost_function[0]
+            ansatz = self.ansatz[0]
+            for inst in self._instance_list:
+                cost_list.append(cost_function(ansatz = ansatz,
+                                               N = nb_qubits, 
+                                               instance = inst, 
+                                               nb_params = nb_params))
         return cost_list
     
     
@@ -703,10 +723,7 @@ class Batch():
     
     def _batch_evaluate_results(self, results_obj):
         """ Uses each element in the batch to evaluate the cost function from the given results object.
-            Currently only works for SINGLE parameter per cost class \n
-            + waht does this look like \n
-            * and this \n
-            - and thins"""
+            Currently only works for SINGLE parameter per cost class"""
         evaluation_list = []
         cost_list = self.cost_list
         ct = 0
@@ -717,16 +734,32 @@ class Batch():
             ct += (ii + 1)
             evaluation_list.append(cost_obj._meas_func(relevant_counts))
         return np.array(evaluation_list)
+    
+    
+    def check_cost_functions(self):
+        """ Looks to see if each individual cost function passes all it's tests
+        TODO: Needs updating to deal with many different ansatz's/gatemaps etc..."""
+        test = True
+        for c in self.cost_list:
+            test &= c.check_depth()
+            if self.instance.backend.name() != 'qasm_simulator':
+                test &= c.check_layout()
+        return test
 
 
     def get_new_param_points(self, bo_list):
+        """ Returns new param points (for each bopt in the list) to try"""
         [bopt._update_model(bopt.normalization_type) for bopt in bo_list] # to verif
         x_new = [bopt._compute_next_evaluations() for bopt in bo_list]
         x_new = np.squeeze(x_new)
         return x_new
     
     
-    def update_bo(self, bo_list, x_new, y_new):
+    def update_bo_inplace(self, bo_list, x_new, y_new, share_results=False):
+        """ Updates each bo in list with each x_new and y_new
+            TODO: impliment sharing of results between BO's"""
+        if share_results:
+            raise NotImplementedError()
         for ii in range(len(bo_list)):
             bo_list[ii].X = np.vstack((bo_list[ii].X, x_new[ii]))
             bo_list[ii].Y = np.vstack((bo_list[ii].Y, y_new[ii]))
