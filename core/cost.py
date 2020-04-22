@@ -87,11 +87,9 @@ class Cost():
         self._keep_res = keep_res
         self._res = []
         self._max_job_size = max_job_size
-
         # These methods needs to be implemented in the subclasses
         self._list_meas = self._gen_list_meas()  
         self._meas_func = self._gen_meas_func() 
-
 
         #define main circuit, i.e. without measurements
         if type(ansatz) == qk.circuit.quantumcircuit.QuantumCircuit:
@@ -131,7 +129,6 @@ class Cost():
         """ Estimate the CostFunction for some parameters - Has a known buy:
             if number of measurement settings > max_job_size """
         if debug: pdb.set_trace()
-
         # reshape the inputs
         params_resh = np.atleast_2d(params)
         nb_meas = len(self._list_meas) #number of meas taken per set of parameters
@@ -161,7 +158,6 @@ class Cost():
         if self.verbose: print(res)
         return res 
 
-
     def _gen_qk_vars(self):
         """ Generate qiskit variables to be bound to a circuit"""
         name_params = ['R'+str(i) for i in range(self.nb_params)]
@@ -188,7 +184,7 @@ class Cost():
         raise NotImplementedError()
 
     def shot_noise(self, params, nb_experiments=8):
-        """ Sends a single job that is 8 times to see shot noise."""        
+        """ Sends a single job many times to see shot noise"""        
         params = [params for ii in range(nb_experiments)]
         return self.__call__(params)
     
@@ -250,7 +246,6 @@ class Cost():
             print(c)
             if depth:
                 print(c.depth())
-
         
     def _return_circuit(self, num=None):
         """ Return a list of circuits according to num following the convention:
@@ -264,6 +259,8 @@ class Cost():
             circ = self.meas_circuits
         return circ
 
+
+
 def compare_layout(circ1, circ2):
     """ Draft, define a list of checks to compare transpiled circuits
         not clear what the rules should be (or what would be a better name)
@@ -272,6 +269,8 @@ def compare_layout(circ1, circ2):
     test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
     test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
     return test
+
+
 
 #======================#
 # Subclasses: GHZ related costs
@@ -314,6 +313,7 @@ class GHZPauliCost(Cost):
         return meas_func
 
 
+
 class GHZWitness1Cost(Cost):
     """ Cost based on witnesses for genuine entanglement ([guhne2005])
     Stabilizer generators S_l of GHZ are (for n=4) S = <XXXX, ZZII, IZZI, IIZZ>
@@ -334,6 +334,8 @@ class GHZWitness1Cost(Cost):
             S2 = np.array([freq_even(counts[1], indices=[i,i+1]) for i in range(N-1)])
             return 0.5*(S1-1) + np.prod((S2+1)/2)
         return meas_func
+
+
 
 class GHZWitness2Cost(Cost):
     """ Exactly as GHZWitness1Cost except that Cost =  Sum_l[S_l] - (N-1)I """   
@@ -415,6 +417,7 @@ class GraphCyclPauliCost(Cost):
         return meas_func
 
 
+
 class GraphCyclWitness1Cost(Cost):
     """ Cost function based on the construction of witnesses for genuine 
     entanglement ([guhne2005])
@@ -453,7 +456,6 @@ class GraphCyclWitness1Cost(Cost):
 
 
 
-
 class GraphCyclWitness2Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that:
         Cost =  Sum_l[S_l] - (N-1)I """   
@@ -482,6 +484,8 @@ class GraphCyclWitness2Cost(Cost):
                 return np.sum(S_odd) + np.sum(S_even) - (N-1)
         return meas_func
 
+
+
 class GraphCyclWitness2FullCost(Cost):
     """ Same cost function as GraphCyclWitness2Cost, except that the measurement
     settings to obtain the expected values of the generators S_l have been
@@ -509,7 +513,9 @@ class GraphCyclWitness2FullCost(Cost):
             exp = [expected_parity(c) for c in counts]
             return np.sum(exp)  - (N-1)
         return meas_func
-    
+
+
+
 class GraphCyclWitness3Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that Cost =  XXX
     To implement"""   
@@ -533,7 +539,9 @@ class GraphCyclWitness3Cost(Cost):
             exp = [expected_parity(c) for c in counts]
             return np.sum(exp)  - (N-1)
         return meas_func
-        
+
+
+
 # ------------------------------------------------------
 # Functions to compute expected values based on measurement outcomes counts as 
 # returned by qiskit
@@ -555,12 +563,16 @@ def freq_even(count_result, indices=None):
         nb_odd += v * (sub_k.count('1')%2)
     return nb_even / (nb_odd + nb_even)
 
+
+
 def expected_parity(results,indices=None):
     """ return the estimated value of the expectation of the parity operator:
     P = P+ - P- where P+(-) is the projector 
     Comment: Parity operator ircuit.quantumcircuit.QuantumCircuitircuit.quantumcircuit.QuantumCircuitmay nor be the right name
     """
     return 2 * freq_even(results, indices=indices) - 1
+
+
 
 def get_substring(string, list_indices=None):
     """ return a substring comprised of only the elements associated to the 
@@ -570,6 +582,8 @@ def get_substring(string, list_indices=None):
         return string
     else:
         return "".join([string[ind] for ind in list_indices])
+
+
 
 # ------------------------------------------------------
 # Some functions to deals with appending measurement and param bindings  
@@ -604,12 +618,14 @@ def append_measurements(circ, measurements, logical_qubits=None):
     return circ
 
 
+
 def gen_meas_circuits(main_circuit, meas_settings, logical_qubits=None):
     """ Return a list of measurable circuit based on a main circuit and
     different settings"""
     c_list = [append_measurements(main_circuit.copy(), m, logical_qubits) 
                   for m in meas_settings] 
     return c_list
+
 
 
 def bind_params(circ, param_values, param_variables):
@@ -625,25 +641,24 @@ def bind_params(circ, param_values, param_variables):
 
 
 
-
-
 class Batch():
     """ New class that accepts a list of ansatz ciruits OR list of cost functinos 
         OR list of gate maps, and will package them together to to run more 
         efficiently in a queue. Also has methods to update a list of Basiean 
         optimizers with new results 
-        TODO: allow class to accept pre-transpile circs as inputs
-        TODO: allow class to accept list of gate+cost+ansatz"""
+        TODO: allow class to accept pre-transpile circs as inputs """
     def __init__(self, gate_map, ansatz, cost_function, 
                  nb_params, nb_qubits,
                  be_manager, nb_shots, optim_lvl, seed):
+        self._last_param_batch = None
         self.seed = seed
         self._backend_manager = be_manager
         self.ansatz = np.atleast_1d(ansatz).tolist()
         self.cost_function = np.atleast_1d(cost_function).tolist()
         self.gate_map = np.atleast_2d(gate_map).tolist()
         self.instance = be_manager.gen_instance_from_current(nb_shots=nb_shots,
-                                                             optim_lvl=optim_lvl)
+                                                             optim_lvl=optim_lvl,
+                                                             seed_transpiler=self.seed)
         self._instance_list = self._gen_inst_list(nb_shots=nb_shots,
                                                   optim_lvl=optim_lvl)
         self.cost_list = self._batch_create(nb_params=nb_params,
@@ -651,10 +666,19 @@ class Batch():
    
     
     def __call__(self, param_list):
-        """ Efficient call to IBMQ devices that packages everything as a single job
+        """ Efficient call to IBMQ devices that packages everything as a single job \n
+            * param_list = 2d array (1 param per cost) \n
+            * OR \n
+            * param_list = 3d array (list of params per cost)
+            * Each dim need not be equal
             TODO: add support for spreading across multiple jobs if > 900 circs
-            TODO: add suport for multiple parameters/circuit"""
-        assert len(param_list) == len(self.cost_list), "Can only send 1 parameter point per circuit. "
+            TODO: better check for inputs"""
+        assert len(param_list) == len(self.cost_list), " Incompatable lengths"
+        try: 
+            param_list[0][0][0]
+        except:
+            param_list = [[list(par)] for par in param_list]
+        self._last_param_batch = param_list
         circs_to_ex = self._batch_package(param_list)
         results_obj = self.instance.execute(circs_to_ex, had_transpiled=True)
         costs = self._batch_evaluate_results(results_obj)
@@ -662,6 +686,8 @@ class Batch():
 
 
     def _gen_inst_list(self, nb_shots, optim_lvl):
+        """ Generates a list of instances with different layouts from which the 
+            circuits are transpiled. These instances are NEVER used to execute"""
         gate_map = self.gate_map
         inst_list = []
         for gm in gate_map:
@@ -674,9 +700,7 @@ class Batch():
 
 
     def _batch_create(self, nb_params, nb_qubits):
-        """ Returns a list of cost classes for each of inputs
-            TODO: enable input of list of gate maps, cost functions and ansatz's
-            TODO: try getting nb_params, nb_qubits from save file"""
+        """ Returns a list of cost classes for each of inputs"""
         if len(self.cost_function) > 1 and len(self.ansatz) > 1 and len(self.gate_map) > 1:
             raise NotImplementedError()
         cost_list = []    
@@ -711,31 +735,53 @@ class Batch():
     
     
     def _batch_package(self, param_list):
-        """ Takes ONE parameter per cost function and returns a list of circuits 
-            that can be executed in a single job. """
+        """ Takes several parameter per cost function and returns a list of circuits 
+            that can be executed in a single job. \n
+            * Assumed to be 3d array by this state
+            * Assumes input is [[c1_p1, c1_p2...], ...[cn_p1, cn_p2...]] where ci_pj is a LIST of parameters \n
+            * Dimentions don't have to agree """
         cost_list = self.cost_list
         circs_to_ex = []
-        for c, p in zip(cost_list, param_list):
-            circs_to_ex += bind_params(c.meas_circuits, p, c._qk_vars)
+        for c, p_list in zip(cost_list, param_list):
+            for p in p_list:
+                circs_to_ex += bind_params(c.meas_circuits, p, c._qk_vars)
         assert len(circs_to_ex) < 900, "Total number of measurement circs do not fit in single job."
         return circs_to_ex
     
     
     def _batch_evaluate_results(self, results_obj):
-        """ Uses each element in the batch to evaluate the cost function from the given results object.
-            Currently only works for SINGLE parameter per cost class"""
+        """ Uses each cost in cost_list to evaluate the cost function from the 
+            given results object.\n
+            * Currently only works IFF the results_job was created just before
+            in __call__"""
         evaluation_list = []
         cost_list = self.cost_list
+        param_list = self._last_param_batch
         ct = 0
-        for cost_obj in cost_list: # for every cost in list
-            relevant_counts = [] 
-            for ii in range(len(cost_obj.meas_circuits)): # find relevant results
-                relevant_counts += [results_obj.get_counts(ii + ct)]
-            ct += (ii + 1)
-            evaluation_list.append(cost_obj._meas_func(relevant_counts))
-        return np.array(evaluation_list)
+        for cost_obj, param_ls in zip(cost_list, param_list):
+            evals = []
+            for param in param_ls:
+                relevant_counts = []
+                for ii in range(len(cost_obj.meas_circuits)):
+                    relevant_counts += [results_obj.get_counts(ii + ct)]
+                ct += ii + 1
+                evals.append(cost_obj._meas_func(relevant_counts))
+            evaluation_list.append(evals)
+        return evaluation_list
     
     
+    def shot_noise(self, param_list, nb_shots):
+        """ Package shot noise to get, accepts single param or list containing 
+            single param per cost function, accets independed nb_shots for each
+            cost"""
+        if isinstance(param_list[0], (int, float)):
+            param_list = [param_list] * len(self.cost_list)
+        if type(nb_shots) == int:
+            nb_shots = [nb_shots] * len(param_list)
+        param_list_new = [[par]*sh for par, sh in zip(param_list, nb_shots)]
+        return self.__call__(param_list_new)
+    
+        
     def check_cost_functions(self):
         """ Looks to see if each individual cost function passes all it's tests
         TODO: Needs updating to deal with many different ansatz's/gatemaps etc..."""
@@ -747,6 +793,19 @@ class Batch():
         return test
 
 
+    def print(self, arg):
+        """ Use keyword to inspect elements of cost list \n
+            arg = cost, main, gate"""
+        if arg == 'cost':
+            print(*self.cost_list, sep = '\n')
+        elif arg == 'main':
+            for cs in self.cost_list:
+                print(cs.main_circuit)
+        elif arg == 'gate':
+            print(*self.gate_map, sep = '\n')
+            
+            
+    # the following functions should probably implimented in extended classes just put here for now 
     def get_new_param_points(self, bo_list):
         """ Returns new param points (for each bopt in the list) to try"""
         [bopt._update_model(bopt.normalization_type) for bopt in bo_list] # to verif
@@ -756,13 +815,17 @@ class Batch():
     
     
     def update_bo_inplace(self, bo_list, x_new, y_new, share_results=False):
-        """ Updates each bo in list with each x_new and y_new
+        """ Updates each bo in list with each x_new and y_new \n
             TODO: impliment sharing of results between BO's"""
         if share_results:
             raise NotImplementedError()
         for ii in range(len(bo_list)):
             bo_list[ii].X = np.vstack((bo_list[ii].X, x_new[ii]))
             bo_list[ii].Y = np.vstack((bo_list[ii].Y, y_new[ii]))
+    
+    
+            
+        
 
 # -------------------------------------------------------------- #
 
