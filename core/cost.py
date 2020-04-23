@@ -18,7 +18,7 @@ import qiskit as qk
 #from qiskit.aqua.operators.common import pauli_measurement
 import numpy as np
 import pdb
-#import copy
+import copy
 #import itertools as it
 pi =np.pi
 
@@ -588,8 +588,9 @@ def get_substring(string, list_indices=None):
 # ------------------------------------------------------
 # Some functions to deals with appending measurement and param bindings  
 # ------------------------------------------------------
-def append_measurements(circ, measurements, logical_qubits=None):
+def append_measurements(circuit, measurements, logical_qubits=None):
     """ Append measurements to one circuit """
+    circ = copy.deepcopy(circuit)
     num_creg = len(measurements.replace('1',''))
     if num_creg > 0:
         cr = qk.ClassicalRegister(num_creg, 'classical')
