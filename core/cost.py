@@ -17,18 +17,19 @@ CHANGES
     generated in the sub classes
     cost.meas_func accepts a qk.results OBJECT IFF
 * Ansatz inputs now it's own class that holds lots of useful info
-* 
 
 Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the 
 quantum instance passed when initializing a Cost, i.e. it is outside of the
 scope of the classes here
 """
 import qiskit as qk
-#from qiskit.aqua.operators.common import pauli_measurement
 import numpy as np
 import abc
 import pdb
 import copy
+import time
+import random
+import string
 #import itertools as it
 pi =np.pi
 
@@ -101,7 +102,7 @@ class Cost(CostInterface):
     def __init__(self, ansatz, N,  instance, nb_params, fix_transpile = True,
                   keep_res = True, verbose = True, noise_model = None,
                   debug = False, max_job_size = 900, error_correction = False,
-                  **args):
+                  name = None, **args):
         """ initialize the cost function taking as input parameters:
             + ansatz : either a function taking parameters as input and 
                        returning a circuit, 
@@ -110,6 +111,7 @@ class Cost(CostInterface):
             + instance (QuantumInstance)
         """
         if debug: pdb.set_trace()
+        self.name = name
         self.ansatz = ansatz
         self.instance = instance
         self.nb_qubits = N  # may be redundant
@@ -157,6 +159,8 @@ class Cost(CostInterface):
         self.err_corr = error_correction
         if(self.err_corr):
             pass
+        
+        self._label_circuits()
     
     def __call__(self, params, debug=False):
         """ Estimate the CostFunction for some parameters - Has a known buy:
@@ -185,7 +189,7 @@ class Cost(CostInterface):
         counts = np.reshape(counts, newshape=[nb_params, nb_meas])
         
         # reshape the output
-        res = np.array([self.meas_func(c) for c in counts]) 
+        res = np.array([self._meas_func(c) for c in counts]) 
         if np.ndim(res) == 1: 
             res = res[:,np.newaxis]
         if self.verbose: print(res)
@@ -215,7 +219,15 @@ class Cost(CostInterface):
     def _gen_meas_func(self):
         """ To be implemented in the subclasses """
         raise NotImplementedError()
-        
+    
+    def _label_circuits(self):
+        """ Gives (random name) to all circuits to they can be identified in the results obj"""
+        if self.name == None:
+            self.name = 'circuit_' + ''.join([random.choice(string.ascii_letters) for ii in range(5)])
+        self.main_circuit.name = self.name
+        for c in self._meas_circuits:
+            c.name = self.name
+            
     @property
     def meas_circuits(self):
         """ Returns list of measurement circuits needed to evaluate the cost function"""
@@ -227,8 +239,12 @@ class Cost(CostInterface):
         """ Returns parameter objects in the circuit"""
         return self._qk_vars
     
-    def meas_func(self, count_list):
+    def meas_func(self, result_obj):
         """ Returns cost value from results object/count list"""
+        count_list = []
+        for ii in range(len(result_obj.results)):
+            if self.name in result_obj.results[ii].header.name:
+                count_list.append(result_obj.get_counts(ii))
         return self._meas_func(count_list)
 
     def shot_noise(self, params, nb_experiments=8):
@@ -792,7 +808,8 @@ class Batch():
         return cost_list
     
     
-    
+
+
             
         
 #%%
@@ -927,5 +944,13 @@ if __name__ == '__main__':
         assert  (fid_rdm - cost2_rdm) > 1e-4, "cost function should be lower than true fid"
         assert  np.abs(cost2full_rdm - cost2_rdm) < 0.1, "both cost function should be closed"
         
-
-
+        
+        circs0 = ghz_cost.meas_circuits
+        circs1 = ghz_witness1.meas_circuits
+        circs0 = bind_params(circs0, X_SOL, ghz_cost.qk_vars)
+        circs1 = bind_params(circs1, X_SOL, ghz_witness1.qk_vars)
+        circs = circs0 + circs1
+        res = inst.execute(circs, had_transpiled=True)
+        
+        assert ghz_cost.meas_func(res) == 1.0, "For passing in results object, check the solutions are correct"
+        assert ghz_witness1.meas_func(res) == 1.0, "For passing in results object, check the solutions are correct"
