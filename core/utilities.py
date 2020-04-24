@@ -278,7 +278,10 @@ def gate_maps(arg):
                     'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx4':[5,6,2], # might actually be 5 dheck/rerun
                     'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx5':[5,13,2], # might actually be 6 dheck/rerun
                     'ROCHESTER_GATE_MAP_GHZ_3_SWAPSx6':[9,13,2]} # might actually be 7 dheck/rerun
-    return gate_maps_di[arg]
+    if arg == 'keys':
+        return gate_maps_di.keys()
+    else:
+        return gate_maps_di[arg]
 
 
 
