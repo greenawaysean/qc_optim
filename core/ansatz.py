@@ -1,52 +1,69 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Monday Apr 20 13:15:21 2020
+
+@author: Chris, Kiran, Fred
+basic script to define ansatz classes to streamline cost function creation
+
+Anything that conforms to the interface should be able to be passed into a 
+cost function
+
+CHANGES: I've rename num_qubit to nb_qubit for consistency with everyhitng else
+"""
+# ===================
+# Define ansatz and initialize costfunction
+# ===================
 
 # list of * contents
 __all__ = [
-    'ParameterisedAnsatz',
+    'AnsatzInterface',
     'BaseAnsatz',
     'RandomAnsatz',
     'RegularXYZAnsatz',
     'RegularU3Ansatz',
+    'AnsatzFromFunction',
 ]
 
+import abc
+import sys
 import random
 import qiskit as qk
 import numpy as np
 
-from abc import ABC, abstractmethod
 
-class ParameterisedAnsatz(ABC):
-    """
-    Interface for a parameterised ansatz. Specifies an object that must have five
+class AnsatzInterface(metaclass=abc.ABCMeta):
+    """Interface for a parameterised ansatz. Specifies an object that must have five
     properties: a depth, a list of qiskit parameters objects, a circuit, the number 
     of qubits and the number of parameters.
     """
-
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def depth(self):
         raise NotImplementedError
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def params(self):
         raise NotImplementedError
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def circuit(self):
         raise NotImplementedError
 
     @property
-    @abstractmethod
-    def num_qubits(self):
+    @abc.abstractmethod
+    def nb_qubits(self):
         raise NotImplementedError
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def nb_params(self):
         raise NotImplementedError
 
-class BaseAnsatz(ParameterisedAnsatz):
+
+class BaseAnsatz(AnsatzInterface):
     """ """
 
     def __init__(
@@ -55,7 +72,7 @@ class BaseAnsatz(ParameterisedAnsatz):
                  depth,
                  **kwargs
                 ):
-        self._num_qubits = num_qubits
+        self._nb_qubits = num_qubits
         self._depth = depth
 
         # make circuit and generate parameters
@@ -84,12 +101,55 @@ class BaseAnsatz(ParameterisedAnsatz):
         return self._params
 
     @property
-    def num_qubits(self):
-        return self._num_qubits
+    def nb_qubits(self):
+        return self._nb_qubits
 
     @property
     def nb_params(self):
         return self._nb_params
+
+
+class AnsatzFromFunction(AnsatzInterface):
+    """ Returns an instance of the GHZ parameterized class"""
+    def __init__(self, ansatz_function, nb_params, x_sol = None):
+        self._x_sol = x_sol
+        self._nb_params = nb_params
+        self._params = self._generate_params()
+        self._circuit = self._generate_circuit(ansatz_function)
+        self.nb_qubits = self._circuit.num_qubits
+        self._depth = self._circuit.depth()
+
+    def _generate_params(self):
+        """ Generate qiskit variables to be bound to a circuit previously was
+            in Cost class"""
+        name_params = ['R'+str(i) for i in range(self._nb_params)]
+        params = [qk.circuit.Parameter(n) for n in name_params]
+        return params
+
+    def _generate_circuit(self, ansatz_function):
+        """ To be implemented in the subclasses """
+        return ansatz_function(self._params)
+
+    @property
+    def depth(self):
+        return self._depth
+
+    @property
+    def circuit(self):
+        return self._circuit
+
+    @property
+    def params(self):
+        return self._params
+
+    @property
+    def nb_qubits(self):
+        return self._nb_qubits
+
+    @property
+    def nb_params(self):
+        return self._nb_params
+
 
 class RandomAnsatz(BaseAnsatz):
     """ """
@@ -111,7 +171,7 @@ class RandomAnsatz(BaseAnsatz):
 
     def _generate_params(self):
         """ """
-        nb_params = 2*(self._num_qubits-1)*self._depth + self._num_qubits
+        nb_params = 2*(self._nb_qubits-1)*self._depth + self._nb_qubits
         name_params = ['R'+str(i) for i in range(nb_params)]
         return [qk.circuit.Parameter(n) for n in name_params]
 
@@ -119,17 +179,17 @@ class RandomAnsatz(BaseAnsatz):
         """ """
 
         # the set number of entangling pairs to distribute randomly
-        ent_pairs = [(i, i + 1) for i in range(self._num_qubits - 1) for _ in range(self._depth)]
+        ent_pairs = [(i, i + 1) for i in range(self._nb_qubits - 1) for _ in range(self._depth)]
         random.shuffle(ent_pairs)
         
         # keep track of where not to apply a entangling gate again
         just_entangled = set()
             
         # keep track of where its worth putting a parameterised gate
-        needs_rgate = [True] * self._num_qubits
+        needs_rgate = [True] * self._nb_qubits
 
         # make circuit obj and list of parameter obj's created
-        qc = qk.QuantumCircuit(self._num_qubits)
+        qc = qk.QuantumCircuit(self._nb_qubits)
 
         # parse entangling gate arg
         if self.gate2=='CZ':
@@ -149,7 +209,7 @@ class RandomAnsatz(BaseAnsatz):
 
         # consume list of pairs to entangle
         while ent_pairs:
-            for i in range(self._num_qubits):
+            for i in range(self._nb_qubits):
                 if needs_rgate[i]:
                     (single_qubit_gates[random.randint(0,2)])(self._params[param_counter],i)
                     param_counter += 1
@@ -166,7 +226,7 @@ class RandomAnsatz(BaseAnsatz):
             just_entangled.discard((i + 1, j + 1))
             needs_rgate[i] = needs_rgate[j] = True
         
-        for i in range(self._num_qubits):
+        for i in range(self._nb_qubits):
             if needs_rgate[i]:
                 (single_qubit_gates[random.randint(0,2)])(self._params[param_counter],i)
                 param_counter += 1
@@ -178,14 +238,14 @@ class RegularXYZAnsatz(BaseAnsatz):
 
     def _generate_params(self):
         """ """
-        nb_params = self._num_qubits*(self._depth+1)
+        nb_params = self._nb_qubits*(self._depth+1)
         name_params = ['R'+str(i) for i in range(nb_params)]
         return [qk.circuit.Parameter(n) for n in name_params]
 
     def _generate_circuit(self):
         """ """
 
-        N = self._num_qubits
+        N = self._nb_qubits
         barriers = True
         
         qc = qk.QuantumCircuit(N)
@@ -245,14 +305,14 @@ class RegularU3Ansatz(BaseAnsatz):
 
     def _generate_params(self):
         """ """
-        nb_params = self._num_qubits*(self._depth+1)*3
+        nb_params = self._nb_qubits*(self._depth+1)*3
         name_params = ['R'+str(i) for i in range(nb_params)]
         return [qk.circuit.Parameter(n) for n in name_params]
 
     def _generate_circuit(self):
         """ """
 
-        N = self._num_qubits
+        N = self._nb_qubits
         barriers = True
         
         qc = qk.QuantumCircuit(N)
@@ -287,3 +347,148 @@ class RegularU3Ansatz(BaseAnsatz):
             param_counter += 3
         
         return qc
+
+
+# ------------------------------------------------------------------------------
+
+# ----------------------------------------
+# Useful function circuits that have been checked
+# ----------------------------------------
+def _GHZ_3qubits_6_params_cx0(params, barriers = False):
+    """ Returns function handle for 6 param ghz state"""
+    logical_qubits = qk.QuantumRegister(3, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.rx(params[0], 0)
+    c.rx(params[1], 1)
+    c.ry(params[2], 2)
+    if barriers: c.barrier()
+    c.cnot(0,2) 
+    c.cnot(1,2) 
+    if barriers: c.barrier()
+    c.rx(params[3], 0)
+    c.rx(params[4], 1)
+    c.ry(params[5], 2)
+    if barriers: c.barrier()
+    return c
+
+def _GHZ_3qubits_6_params_cx1(params, barriers = False):
+    """ Returns function handle for 6 param ghz state 1 swap"""
+    logical_qubits = qk.QuantumRegister(3, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.ry(params[2], 0)
+    c.rx(params[1], 1)
+    c.rx(params[0], 2)
+    c.swap(0, 2)
+    if barriers: c.barrier()
+    c.cnot(0,2) 
+    c.cnot(1,2) 
+    if barriers: c.barrier()
+    c.rx(params[3], 0)
+    c.rx(params[4], 1)
+    c.ry(params[5], 2)
+    if barriers: c.barrier()
+    return c
+
+def _GHZ_3qubits_6_params_cx2(params, barriers = False):
+    """ Returns function handle for 6 param ghz state 2 swaps"""
+    logical_qubits = qk.QuantumRegister(3, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.ry(params[2], 0) 
+    c.rx(params[0], 1) 
+    c.rx(params[1], 2) 
+    c.swap(0, 1)
+    c.swap(1, 2)
+    if barriers: c.barrier()
+    c.cnot(0,2) 
+    c.cnot(1,2) 
+    if barriers: c.barrier()
+    c.rx(params[3], 0)
+    c.rx(params[4], 1)
+    c.ry(params[5], 2)
+    if barriers: c.barrier()
+    return c
+    
+def _GraphCycl_6qubits_6params(params, barriers = False):        
+    """ Returns handle to cyc6 cluster state with c-phase gates"""
+    logical_qubits = qk.QuantumRegister(6, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.ry(params[0],0)
+    c.ry(params[1],1)
+    c.ry(params[2],2)
+    c.ry(params[3],3)
+    c.ry(params[4],4)
+    c.ry(params[5],5)
+    if barriers: c.barrier()
+    c.cz(0,1)
+    c.cz(2,3)
+    c.cz(4,5)
+    if barriers: c.barrier()
+    c.cz(1,2)
+    c.cz(3,4)
+    c.cz(5,0)
+    if barriers: c.barrier()
+    return c
+
+def _GraphCycl_6qubits_6params_inefficient(params, barriers = False):        
+    """ Returns handle to cyc6 cluster state with cry() gates"""
+    logical_qubits = qk.QuantumRegister(6, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.ry(params[0],0)
+    c.ry(params[1],1)
+    c.ry(params[2],2)
+    c.ry(params[3],3)
+    c.ry(params[4],4)
+    c.ry(params[5],5)
+    if barriers: c.barrier()
+    c.crz(np.pi, 0,1)
+    c.crz(np.pi, 2,3)
+    c.crz(np.pi, 4,5)
+    if barriers: c.barrier()
+    c.crz(np.pi, 1,2)
+    c.crz(np.pi, 3,4)
+    c.crz(np.pi, 5,0)
+    if barriers: c.barrier()
+    return c
+
+def _GraphCycl_6qubits_24params(params, barriers = False):
+    """ Ansatz to be refined, too many params - BO doens't converge"""
+    logical_qubits = qk.QuantumRegister(6, 'logicals')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.h(0)
+    c.h(1)
+    c.h(2)
+    c.h(3)
+    c.h(4)
+    c.h(5)
+    if barriers: c.barrier()
+    c.ry(params[0], 0)
+    c.ry(params[1], 1)
+    c.ry(params[2], 2)
+    c.ry(params[3], 3)
+    c.ry(params[4], 4)
+    c.ry(params[5], 5)
+    if barriers: c.barrier()
+    c.cnot(0,1) 
+    c.cnot(2,3) 
+    c.cnot(4,5)
+    if barriers: c.barrier()
+    c.rz(params[6], 0)
+    c.rz(params[7], 1)
+    c.rz(params[8], 2)
+    c.rz(params[9], 3)
+    c.rz(params[10], 4)
+    c.rz(params[11], 5)
+    if barriers: c.barrier()
+    c.cnot(1,2) 
+    c.cnot(3,4)
+    c.cnot(5,0)
+    if barriers: c.barrier()
+    c.u2(params[12], params[13], 0)
+    c.u2(params[14], params[15], 1)
+    c.u2(params[16], params[17], 2)
+    c.u2(params[18], params[19], 3)
+    c.u2(params[20], params[21], 4)
+    c.u2(params[22], params[23], 5)
+    if barriers: c.barrier()
+    return c
+
