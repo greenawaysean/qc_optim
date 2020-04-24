@@ -10,6 +10,7 @@ Anything that conforms to the interface should be able to be passed into a
 cost function
 
 CHANGES: I've rename num_qubit to nb_qubit for consistency with everyhitng else
+TODO: Change params -> qk_vars to match cost interface better?
 """
 # ===================
 # Define ansatz and initialize costfunction
@@ -116,7 +117,7 @@ class AnsatzFromFunction(AnsatzInterface):
         self._nb_params = nb_params
         self._params = self._generate_params()
         self._circuit = self._generate_circuit(ansatz_function)
-        self.nb_qubits = self._circuit.num_qubits
+        self._nb_qubits = self._circuit.num_qubits
         self._depth = self._circuit.depth()
 
     def _generate_params(self):
