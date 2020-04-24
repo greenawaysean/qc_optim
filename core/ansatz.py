@@ -130,6 +130,15 @@ class AnsatzFromFunction(AnsatzInterface):
     def _generate_circuit(self, ansatz_function):
         """ To be implemented in the subclasses """
         return ansatz_function(self._params)
+    
+    def _reorder_params(self):
+        """ Probably useless, but ensures ordred list of params (careful when loading from pkl files)"""
+        names = [p.name.split('R')[1] for p in self._params]
+        di = dict(zip(names, self._params))
+        reordered = []
+        for ii in range(self.nb_params):
+            reordered.append(di[str(ii)])
+        self._params = reordered
 
     @property
     def depth(self):
