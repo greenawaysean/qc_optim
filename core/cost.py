@@ -11,6 +11,14 @@ DONE: See new class - Batch Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
 TODO: (LATER) implement sampling (of the measurement settings) strategy
 
+CHANGES
+* Cost now conforms to CostInterface
+* cost.meas_func is now a general function that calls self._meas_func that was 
+    generated in the sub classes
+    cost.meas_func accepts a qk.results OBJECT IFF
+* Ansatz inputs now it's own class that holds lots of useful info
+* 
+
 Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the 
 quantum instance passed when initializing a Cost, i.e. it is outside of the
 scope of the classes here
@@ -25,31 +33,24 @@ import copy
 pi =np.pi
 
 #======================#
-# Base class interface
+# Basic cost interface
 #======================#
-class _CostInterface(metaclass=abc.ABCMeta):
+class CostInterface(metaclass=abc.ABCMeta):
     """ Impliments interface that can be used in batch processing
         TODO: DISCUSS: _meas_func from qk.result.result.Result? Perhaps with named circs?
-        TODO: DISCUSS: change names of hidden methods?
-        TODO: current cost class has properties not methods"""
-    @abc.abstractmethod
-    def __call__(self, params):
-        """ Not actually needed yet, our cost class has instance parameter that can be used to execute itsself
-            should accept list of parameters to evaluate, and evaluate them efficiently"""
-        raise NotImplementedError
-        
+        """
     @abc.abstractmethod
     def meas_circuits(self):
         """ Returns a list of measurement circs required to evaluate cost function"""
         raise NotImplementedError
     
     @abc.abstractmethod
-    def _qk_vars(self):
+    def qk_vars(self):
         """ Returns a list of qiskit.circuit.parameter.Parameter objects for the paramaterised circs"""
         raise NotImplementedError
     
     @abc.abstractmethod
-    def _meas_func(self, count_list : list):
+    def meas_func(self, count_list : list):
         """ Returns the result of the cost function from a LIST of measurement
             I.e. list of count DICT's"""
         raise NotImplementedError
@@ -57,7 +58,7 @@ class _CostInterface(metaclass=abc.ABCMeta):
 #======================#
 # Base class
 #======================#
-class Cost():
+class Cost(CostInterface):
     """
     This base class defines all the ingredients necessary to evaluate a cost 
     function based on an ansatz circuit:
@@ -148,10 +149,10 @@ class Cost():
         self.qubits_indx = [self.log2phys[i] for i in range(self.nb_qubits)]
         
         # create measurable circuits
-        self.meas_circuits = gen_meas_circuits(self._untranspiled_main_circuit, 
-                                               self._list_meas)
+        self._meas_circuits = gen_meas_circuits(self._untranspiled_main_circuit, 
+                                                self._list_meas)
         if type(ansatz) == type(lambda x:1):
-            self.meas_circuits = self.instance.transpile(self.meas_circuits)
+            self._meas_circuits = self.instance.transpile(self._meas_circuits)
         
         self.err_corr = error_correction
         if(self.err_corr):
@@ -169,7 +170,7 @@ class Cost():
         # List of all the circuits to be ran
         bound_circs = []
         for p in params_resh:
-            bound_circs += bind_params(self.meas_circuits, p, self._qk_vars)
+            bound_circs += bind_params(self._meas_circuits, p, self._qk_vars)
 
         # Slice the execution such that a maximum of _max_job_size is executed
         # ensure that any batch has all the circuits relating to a set of parameters
@@ -184,7 +185,7 @@ class Cost():
         counts = np.reshape(counts, newshape=[nb_params, nb_meas])
         
         # reshape the output
-        res = np.array([self._meas_func(c) for c in counts]) 
+        res = np.array([self.meas_func(c) for c in counts]) 
         if np.ndim(res) == 1: 
             res = res[:,np.newaxis]
         if self.verbose: print(res)
@@ -214,6 +215,21 @@ class Cost():
     def _gen_meas_func(self):
         """ To be implemented in the subclasses """
         raise NotImplementedError()
+        
+    @property
+    def meas_circuits(self):
+        """ Returns list of measurement circuits needed to evaluate the cost function"""
+        circs = self._meas_circuits
+        return circs
+    
+    @property
+    def qk_vars(self):
+        """ Returns parameter objects in the circuit"""
+        return self._qk_vars
+    
+    def meas_func(self, count_list):
+        """ Returns cost value from results object/count list"""
+        return self._meas_func(count_list)
 
     def shot_noise(self, params, nb_experiments=8):
         """ Sends a single job many times to see shot noise"""        
@@ -225,7 +241,7 @@ class Cost():
         TODO: remove except if really needed
         """
         ref = self.main_circuit
-        test = [compare_layout(ref, c) for c in self.meas_circuits]
+        test = [compare_layout(ref, c) for c in self._meas_circuits]
         return np.all(test)
 
     def compare_layout(self, cost2, verbose=True):
@@ -243,7 +259,7 @@ class Cost():
     def check_depth(self, long_output=False, delta = 1):
         """ Check the depths of the measurable circuits, are all within a delta
         """
-        depth = [c.depth() for c in self.meas_circuits]
+        depth = [c.depth() for c in self._meas_circuits]
         test = (max(depth) - min(depth)) <=delta
         return test
     
@@ -286,10 +302,13 @@ class Cost():
         if num is None:
             circ = [self.main_circuit]
         elif num >= 0:
-            circ = [self.meas_circuits[num]]
+            circ = [self._meas_circuits[num]]
         elif num == -1:
-            circ = self.meas_circuits
+            circ = self._meas_circuits
         return circ
+    
+  
+        
 
 
 
@@ -629,7 +648,7 @@ def append_measurements(circuit, measurements, logical_qubits=None):
         circ.add_register(cr)
     
     if logical_qubits is None: 
-        logical_qubits = np.arange(circ.n_qubits)
+        logical_qubits = np.arange(circ.num_qubits)
     
     creg_idx = 0
     for qb_idx, basis in enumerate(measurements):
@@ -776,7 +795,7 @@ class Batch():
     
             
         
-
+#%%
 # -------------------------------------------------------------- #
 
 if __name__ == '__main__':
@@ -784,7 +803,7 @@ if __name__ == '__main__':
     fake = FakeRochester() # not working
     simulator = qk.Aer.get_backend('qasm_simulator')
     backends = [simulator]
-    
+    sim = backends[0]
     for sim in backends:
         #-----#
         # Verif conventions
