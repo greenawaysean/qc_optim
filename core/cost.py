@@ -13,9 +13,10 @@ TODO: (LATER) implement sampling (of the measurement settings) strategy
 
 CHANGES
 * Cost now conforms to CostInterface
-* cost.meas_func is now a general function that calls self._meas_func that was 
+* Cost.meas_func now changed to cost.evaluate_cost
+* cost.evaluate_cost is now a general function that calls self._meas_func that was 
     generated in the sub classes
-    cost.meas_func accepts a qk.results OBJECT IFF
+    cost.evaluate_cost accepts a qk.results OBJECT IFF
 * Ansatz inputs now it's own class that holds lots of useful info
 
 Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the 
@@ -51,9 +52,11 @@ class CostInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     @abc.abstractmethod
-    def meas_func(self, count_list : list):
-        """ Returns the result of the cost function from a LIST of measurement
-            I.e. list of count DICT's"""
+    def evaluate_cost(self, results : qk.result.result.Result, 
+                  name = None):
+        """ Returns the result of the cost function from a qk results object, 
+            optional to spesify a name to give the results list
+            TODO: extend to allow list of names"""
         raise NotImplementedError
 
 #======================#
@@ -201,11 +204,13 @@ class Cost(CostInterface):
         """ Returns parameter objects in the circuit"""
         return self._qk_vars
     
-    def meas_func(self, result_obj):
+    def evaluate_cost(self, result_obj, name = None):
         """ Returns cost value from results object/count list"""
         count_list = []
+        if name == None:
+            name = self.name
         for ii in range(len(result_obj.results)):
-            if self.name in result_obj.results[ii].header.name:
+            if name in result_obj.results[ii].header.name:
                 count_list.append(result_obj.get_counts(ii))
         return self._meas_func(count_list)
 
@@ -770,7 +775,7 @@ if __name__ == '__main__':
         #-----#
         # Verif conventions
         #-----#
-        ansatz = anz.AnsatzFromFunction(anz._GHZ_3qubits_6_params_cx0, 6)
+        ansatz = anz.AnsatzFromFunction(anz._GHZ_3qubits_6_params_cx0)
         
         bound_circ = bind_params(ansatz.circuit, [1,2,3,4,5,6], ansatz.circuit.parameters)
         
@@ -818,7 +823,7 @@ if __name__ == '__main__':
         # Cyclical graph states
         #-----#
 
-        ansatz = anz.AnsatzFromFunction(anz._GraphCycl_6qubits_6params, 6)
+        ansatz = anz.AnsatzFromFunction(anz._GraphCycl_6qubits_6params)
         X_SOL = np.pi/2 * np.ones(ansatz.nb_params) # sol of the cycl graph state for this ansatz
         X_RDM = np.array([1.70386471,1.38266762,3.4257722,5.78064,3.84102323,2.37653078])
         #X_RDM = np.random.uniform(low=0., high=2*np.pi, size=(N_params,))
@@ -861,5 +866,5 @@ if __name__ == '__main__':
         circs = circs0 + circs1
         res = inst.execute(circs, had_transpiled=True)
         
-        assert ghz_cost.meas_func(res) == 1.0, "For passing in results object, check the solutions are correct"
-        assert ghz_witness2.meas_func(res) == 1.0, "For passing in results object, check the solutions are correct"
+        assert ghz_cost.evaluate_cost(res) == 1.0, "For passing in results object, check the solutions are correct"
+        assert ghz_witness2.evaluate_cost(res) == 1.0, "For passing in results object, check the solutions are correct"
