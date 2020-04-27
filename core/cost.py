@@ -30,6 +30,7 @@ import random
 import string
 import numpy as np
 import qiskit as qk
+import utilities as ut
 
 #import itertools as it
 pi =np.pi
@@ -188,7 +189,7 @@ class Cost(CostInterface):
     def _label_circuits(self):
         """ Gives (random name) to all circuits to they can be identified in the results obj"""
         if self.name == None:
-            self.name = 'circuit_' + ''.join([random.choice(string.ascii_letters) for ii in range(5)])
+            self.name = 'circuit_' + ut.gen_random_str(5)
         self.main_circuit.name = self.name
         for c in self._meas_circuits:
             c.name = self.name

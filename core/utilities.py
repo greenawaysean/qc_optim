@@ -222,7 +222,10 @@ def gen_default_argsbo(f, domain, nb_init, eval_init=True):
     return default_args
 
 
-    
+def gen_random_str(nb_chars = 5):
+    choose_from = string.ascii_letters + string.digits
+    rnd = ''.join([random.choice(choose_from) for ii in range(nb_chars)])
+    return rnd
 
 
 # Generate noise models
@@ -249,7 +252,7 @@ def gen_pkl_file(cost,
         file_name = path + '_res_' + cost.instance.backend.name() 
         file_name += '_' + str(cost.__class__).split('.')[1].split("'")[0] + '_'
         file_name += info
-        file_name += ''.join([random.choice(string.ascii_letters) for ii in range(3)])
+        file_name += gen_random_str(3)
         file_name += '.pkl'
 
     
