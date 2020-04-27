@@ -3,3 +3,5 @@ _*
 /results_pkl
 /core/.ipynb_checkpoints
 
+# mac finder files
+*.DS_Store 
