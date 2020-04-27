@@ -112,9 +112,9 @@ class BaseAnsatz(AnsatzInterface):
 
 class AnsatzFromFunction(AnsatzInterface):
     """ Returns an instance of the GHZ parameterized class"""
-    def __init__(self, ansatz_function, nb_params, x_sol = None):
+    def __init__(self, ansatz_function, x_sol = None):
         self._x_sol = x_sol
-        self._nb_params = nb_params
+        self._nb_params = count_params_from_func(ansatz_function)
         self._params = self._generate_params()
         self._circuit = self._generate_circuit(ansatz_function)
         self._nb_qubits = self._circuit.num_qubits
@@ -360,7 +360,16 @@ class RegularU3Ansatz(BaseAnsatz):
 
 
 # ------------------------------------------------------------------------------
-
+def count_params_from_func(ansatz):
+    """ Counts the number of parameters that the ansatz function accepts"""
+    call_list = [0]
+    for ii in range(100):
+        try:
+            ansatz(call_list)
+            return len(call_list)
+        except IndexError:
+            call_list += [0]
+    
 # ----------------------------------------
 # Useful function circuits that have been checked
 # ----------------------------------------
