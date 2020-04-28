@@ -15,7 +15,9 @@ Miscellaneous utilities (may be split at some point):
 """
 # list of * contents
 __all__ = [
+    # Backend utilities
     'BackendManager',
+    # BO related utilities
     'add_path_GPyOpt',
     'get_path_GPyOpt',
     'get_best_from_bo',
@@ -26,6 +28,7 @@ __all__ = [
     'gen_pkl_file',
     'gate_maps',
     'Results',
+    # Chemistry utilities
     'get_H2_data',
     'get_H2_qubit_op',
     'get_H2_shift',
