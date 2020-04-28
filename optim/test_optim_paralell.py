@@ -18,6 +18,7 @@ import optimisers as op
 
 
 
+
 # ===================
 # Defaults
 # ===================
@@ -33,7 +34,11 @@ CHOOSE_DEVICE = False
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
-bem = ut.BackendManager()
+try:
+    bem
+except:
+    bem = ut.BackendManager()
+    
 if CHOOSE_DEVICE:
     bem.get_current_status()
     chosen_device = int(input('SELECT IBM DEVICE:'))
@@ -58,30 +63,46 @@ cst2 = cost.GHZPauliCost(anz2, inst)
 # ======================== /
 
 
-DOMAIN_FULL = [(0, 2*np.pi) for i in range(anz0.nb_params)]
-bo_args = ut.gen_default_argsbo(f=lambda x: None, 
-                                domain=DOMAIN_FULL, 
-                                nb_init=NB_INIT,
+bo_args = ut.gen_default_argsbo(f=lambda x: 0.5, 
+                                domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
+                                nb_init=5,
                                 eval_init=False)
 
 # init optim class 
 optim = op.ParallelOptimizer([cst0, cst1, cst2], 
                              GPyOpt.methods.BayesianOptimization, 
-                             bo_args,
+                             optimizer_args=bo_args,
                              share_init=False,
                              nb_init=5)
 
+# NO FUCKING CLUE WHY THIS HAPENS???? eval_init=False should return NONE????
+print(optim.optim_list[0].X)
+print(optim.optim_list[0].Y)
+
+
+# ========================= /
+# But it works:
+# ========================= /
 Batch = cost.Batch(instance=inst)
 optim.gen_init_circuits()
 Batch.submit(optim)
 Batch.execute()
 results_obj = Batch.result(optim)
+optim.init_optimisers(results_obj)
 
-x, y = optim._cross_evaluation(0, 2, results_obj=results_obj)
-print('x params from 0, cost func 2 = {}'.format(x))
-print('cost eval 0, from params requested by cost func 2: = {}'.format(y))
+# optimizers now have new init info. 
+print(optim.optim_list[0].X)
+print(optim.optim_list[0].Y)
 
+optim.next_evaluation_circuits()
+Batch.submit(optim)
+Batch.execute()
+results_obj = Batch.result(optim)
+optim.update(results_obj)
 
+# update sucessfull (shared data)
+print(optim.optim_list[0].X)
+print(optim.optim_list[0].Y)
 
 #%% Everything here is old and broken
 

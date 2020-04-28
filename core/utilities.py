@@ -259,11 +259,11 @@ def gen_random_str(nb_chars = 5):
     return rnd
 
 
-def append_to_names(circ_list, st_to_append):
+def prefix_to_names(circ_list, st_to_prefix):
     """ Returns a NEW list of circs with new names appended"""
     circ_list = copy.deepcopy(circ_list)
     for ii in range(len(circ_list)):
-        circ_list[ii].name = circ_list[ii].name + st_to_append
+        circ_list[ii].name = st_to_prefix + '_' + circ_list[ii].name 
     return circ_list
 
 

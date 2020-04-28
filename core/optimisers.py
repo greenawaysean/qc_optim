@@ -334,8 +334,8 @@ class ParallelOptimizer(Optimiser):
           with which params"""
     def __init__(self, 
                  cost_objs,
-                 optimizer, # to replace with default BO
-                 optimizer_args,
+                 optimizer, # to replace default BO, extend to list? 
+                 optimizer_args, # also allow list of input args
                  method = 'shared',
                  share_init = True,
                  nb_init = 10,
@@ -354,14 +354,36 @@ class ParallelOptimizer(Optimiser):
         self._parallel_x = []
         self._parallel_id = []
         self._last_results_obj = None
+        self._sharing_matrix = self._gen_sharing_matrix()
     
     
     def _gen_optim_list(self):
         """ Not really needed as a whole seperate function for now, but might be 
             useful dealith with different types of optmizers"""
-         # add check for list of optim args? 1/optim?
+        # add check for list of optim args? 1/optim?
         optim_list =  [self.optimizer(**self.optimizer_args) for ii in range(len(self.cost_objs))]
         return optim_list
+    
+    
+    def _gen_sharing_matrix(self):
+        nb_optim = len(self.optim_list)
+        """ Generates the sharing tuples based on sharing mode"""
+        if self.method == 'shared':
+            return [(ii, jj, 0) for ii in range(nb_optim) for jj in range(nb_optim)]
+        elif self.method == 'independent':
+            return [(ii, ii, 0) for ii in range(nb_optim)]
+        elif self.method == 'left':
+            tuples = []
+            for ii in range(nb_optim):
+                for jj in range(nb_optim):
+                    if ii >= jj:
+                        tuples.append((ii,jj,0))
+                    else:
+                        tuples.append((ii, ii, jj-ii))
+            return tuples
+        
+    def _get_padding_circuits():
+        raise NotImplementedError
 
 
     def _cross_evaluation(self, 
@@ -373,7 +395,7 @@ class ParallelOptimizer(Optimiser):
             function called. 
             + If the input cost function requested mutiple new parameter 
             points, you can spesify which parameter points you want.
-            TODO: allaw vectorized verion of this for fast evaluation"""
+            TODO: allow vectorized verion of this for fast evaluation"""
         if results_obj == None:
             results_obj = self._last_results_obj
         circ_name = self._parallel_id[cst_input_idx][result_idx]
@@ -405,7 +427,7 @@ class ParallelOptimizer(Optimiser):
             for pt in points:
                 this_id = ut.gen_random_str(8)
                 id_list.append(this_id)
-                named_circs = ut.append_to_names(meas_circuits, this_id)
+                named_circs = ut.prefix_to_names(meas_circuits, this_id)
                 circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
             self._parallel_id.append(id_list)
         self.circs_to_exec = circs_to_exec
@@ -415,10 +437,19 @@ class ParallelOptimizer(Optimiser):
     def init_optimisers(self, results_obj): 
         """ Take results object to init each of the optimisers 
             TODO: allow for more than one intiial """
+        self._last_results_obj= results_obj
+        nb_optim = len(self.optim_list)
+        nb_init = self.nb_init
         if self._share_init:
-            pass
+            sharing_matrix = [(cc,0,run) for cc in range(nb_optim) for run in range(nb_init)]
         else:
-            raise NotImplementedError
+            sharing_matrix = [(cc,cc,run) for cc in range(nb_optim) for run in range(nb_init)]
+        for evl, req, run in sharing_matrix:
+            x, y = self._cross_evaluation(evl, req, run)
+            opt = self.optim_list[evl]
+            opt.X = np.vstack((opt.X, x))
+            opt.Y = np.vstack((opt.Y, y))
+        [opt.run_optimization(max_iter = 0, eps = 0) for opt in self.optim_list]
             
 
     def next_evaluation_circuits(self):
@@ -426,19 +457,46 @@ class ParallelOptimizer(Optimiser):
         executable qiskit quantum circuits. Assumes every cost function can 
         only request 1 param point
         TODO: Put interface for _compute_next_ev...."""
-        raise Warning('This has not been checked, dont worry if it breaks')
-        x_new = [opt._compute_next_evaluations() for opt in self.optim_list]
+        self._parallel_id = []
+        self._parallel_x = []
+        x_new = np.atleast_2d(np.squeeze([opt._compute_next_evaluations() for opt in self.optim_list]))
         circs_to_exec = []
         for cst, pt in zip(self.cost_objs, x_new):
-            circs_to_exec += cost.bind_params(cst.meas_circuits, pt, cst.meas_circuits[0].parameters)
-        self.circs_to_exec = circs_to_exec
+            this_id = ut.gen_random_str(8)
+            self._parallel_id.append([this_id])
+            self._parallel_x.append([pt])
+            named_circs = ut.prefix_to_names(cst.meas_circuits, this_id)
+            circs_to_exec += cost.bind_params(named_circs, pt, cst.meas_circuits[0].parameters)
+        self.circs_to_exec = circs_to_exec #+ self._get_padding_circuits()
         return circs_to_exec # maybe get rid of these returns
             
     
-    def update(self,results_obj):
-        """ Process a new set of data in the form of a results object """
-        if self.method == 'shared':
-            raise NotImplementedError
-        elif self.method == 'independent':
-            raise NotImplementedError
-        
+    def update(self, results_obj):
+        self._last_results_obj = results_obj
+        """ Process a new set of data in the form of a results object, 
+            Uses self._sharing_matrix to decide how to allocate results to 
+            optimisers"""
+        for evl, req, par in self._sharing_matrix:
+            x, y = self._cross_evaluation(evl, req, par)
+            opt = self.optim_list[evl]
+            opt.X = np.vstack((opt.X, x))
+            opt.Y = np.vstack((opt.Y, y))
+    
+
+       
+
+# for iter_idx in range(NB_ITER):
+#     Bopt._update_model(Bopt.normalization_type) # to verif
+
+#     if(update_weights):
+#         Bopt.acquisition.exploration_weight = dynamics_weight(iter_idx)
+    
+#     #suggested parameters
+#     Xnew = Bopt._compute_next_evaluations()
+    
+#     #### EVAL FOR THE NEW SUGGESTION <- where you would do extra stuff
+#     Ynew = cost_bo(Xnew)
+
+#     #Incorporate new data Augment X
+#     Bopt.X = np.vstack((Bopt.X, Xnew))
+#     Bopt.Y = np.vstack((Bopt.Y, Ynew))
