@@ -23,6 +23,29 @@ Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the
 quantum instance passed when initializing a Cost, i.e. it is outside of the
 scope of the classes here
 """
+
+# list of * contents
+__all__ = [
+    'CostInterface',
+    'Cost',
+    'compare_layout',
+    'GHZPauliCost',
+    'GHZWitness1Cost',
+    'GHZWitness2Cost',
+    'GraphCyclPauliCost',
+    'GraphCyclWitness1Cost',
+    'GraphCyclWitness2Cost',
+    'GraphCyclWitness2FullCost',
+    'GraphCyclWitness3Cost',
+    'freq_even',
+    'expected_parity',
+    'get_substring'
+    'append_measurements',
+    'gen_meas_circuits',
+    'bind_params',
+    'Batch',
+]
+
 import abc
 import pdb
 import copy
@@ -291,7 +314,6 @@ class Cost(CostInterface):
             circ = self._meas_circuits
         return circ
 
-
 def compare_layout(circ1, circ2):
     """ Draft, define a list of checks to compare transpiled circuits
         not clear what the rules should be (or what would be a better name)
@@ -300,7 +322,6 @@ def compare_layout(circ1, circ2):
     test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
     test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
     return test
-
 
 #======================#
 # Subclasses: GHZ related costs
@@ -341,8 +362,6 @@ class GHZPauliCost(Cost):
             return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
         return meas_func
 
-
-
 class GHZWitness1Cost(Cost):
     """ Cost based on witnesses for genuine entanglement ([guhne2005])
     Stabilizer generators S_l of GHZ are (for n=4) S = <XXXX, ZZII, IZZI, IIZZ>
@@ -363,7 +382,6 @@ class GHZWitness1Cost(Cost):
             return 0.5*(S1-1) + np.prod((S2+1)/2)
         return meas_func
 
-
 class GHZWitness2Cost(Cost):
     """ Exactly as GHZWitness1Cost except that Cost =  Sum_l[S_l] - (N-1)I """   
     
@@ -382,7 +400,6 @@ class GHZWitness2Cost(Cost):
             return S1 + np.sum(S2) - (N -1)
         return meas_func
     
-
 #======================#
 # Subclasses: Graph states
 #======================#    
@@ -443,7 +460,6 @@ class GraphCyclPauliCost(Cost):
             return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
         return meas_func
 
-
 class GraphCyclWitness1Cost(Cost):
     """ Cost function based on the construction of witnesses for genuine 
     entanglement ([guhne2005])
@@ -480,7 +496,6 @@ class GraphCyclWitness1Cost(Cost):
                 return 0.5*(S_even[-1]-1) + np.prod((S_odd+1)/2) * np.prod((S_even[:-1]+1)/2) 
         return meas_func
 
-
 class GraphCyclWitness2Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that:
         Cost =  Sum_l[S_l] - (N-1)I """   
@@ -508,7 +523,6 @@ class GraphCyclWitness2Cost(Cost):
                 S_even = np.array([expected_parity(counts_even, indices=i) for i in ind_even])
                 return np.sum(S_odd) + np.sum(S_even) - (N-1)
         return meas_func
-
 
 class GraphCyclWitness2FullCost(Cost):
     """ Same cost function as GraphCyclWitness2Cost, except that the measurement
@@ -538,7 +552,6 @@ class GraphCyclWitness2FullCost(Cost):
             return np.sum(exp)  - (N-1)
         return meas_func
 
-
 class GraphCyclWitness3Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that Cost =  XXX
     To implement"""   
@@ -563,7 +576,6 @@ class GraphCyclWitness3Cost(Cost):
             return np.sum(exp)  - (N-1)
         return meas_func
 
-
 # ------------------------------------------------------
 # Functions to compute expected values based on measurement outcomes counts as 
 # returned by qiskit
@@ -585,14 +597,12 @@ def freq_even(count_result, indices=None):
         nb_odd += v * (sub_k.count('1')%2)
     return nb_even / (nb_odd + nb_even)
 
-
 def expected_parity(results,indices=None):
     """ return the estimated value of the expectation of the parity operator:
     P = P+ - P- where P+(-) is the projector 
     Comment: Parity operator ircuit.quantumcircuit.QuantumCircuitircuit.quantumcircuit.QuantumCircuitmay nor be the right name
     """
     return 2 * freq_even(results, indices=indices) - 1
-
 
 def get_substring(string, list_indices=None):
     """ return a substring comprised of only the elements associated to the 
@@ -602,7 +612,6 @@ def get_substring(string, list_indices=None):
         return string
     else:
         return "".join([string[ind] for ind in list_indices])
-
 
 # ------------------------------------------------------
 # Some functions to deals with appending measurement and param bindings  
@@ -636,14 +645,12 @@ def append_measurements(circuit, measurements, logical_qubits=None):
             raise NotImplementedError('measurement basis {} not understood').format(basis)
     return circ
 
-
 def gen_meas_circuits(main_circuit, meas_settings, logical_qubits=None):
     """ Return a list of measurable circuit based on a main circuit and
     different settings"""
     c_list = [append_measurements(main_circuit.copy(), m, logical_qubits) 
                   for m in meas_settings] 
     return c_list
-
 
 def bind_params(circ, param_values, param_variables):
     """ Take a list of circuits with bindable parameters and bind the values 
@@ -655,8 +662,6 @@ def bind_params(circ, param_values, param_variables):
     val_dict = {key:val for key,val in zip(param_variables, param_values)}
     bound_circ = [cc.bind_parameters(val_dict) for cc in circ]
     return bound_circ  
-
-
 
 class Batch():
     """ New class that batches circuits together for a single execute.
@@ -756,11 +761,6 @@ class Batch():
                                                instance = inst, 
                                                nb_params = nb_params))
         return cost_list
-    
-    
-
-
-            
         
 #%%
 # -------------------------------------------------------------- #
