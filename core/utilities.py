@@ -511,3 +511,165 @@ class Results():
             print(temp_k + ':  ' + temp_v)
 
 
+# ------------------------------------------------------
+# Chemistry related helper functions
+# ------------------------------------------------------
+
+def get_H2_data(dist):
+    """ 
+    Use the qiskit chemistry package to get the qubit Hamiltonian for LiH
+
+    Parameters
+    ----------
+    dist : float
+        The nuclear separations
+
+    Returns
+    -------
+    qubitOp : qiskit.aqua.operators.WeightedPauliOperator
+        Qiskit representation of the qubit Hamiltonian
+    shift : float
+        The ground state of the qubit Hamiltonian needs to be corrected by this amount of
+        energy to give the real physical energy. This includes the replusive energy between
+        the nuclei and the energy shift of the frozen orbitals.
+    """
+    driver = PySCFDriver(atom="H .0 .0 .0; H .0 .0 " + str(dist), 
+                         unit=UnitsType.ANGSTROM, 
+                         charge=0, 
+                         spin=0, 
+                         basis='sto3g',
+                        )
+    molecule = driver.run()
+    repulsion_energy = molecule.nuclear_repulsion_energy
+    num_particles = molecule.num_alpha + molecule.num_beta
+    num_spin_orbitals = molecule.num_orbitals * 2
+    ferOp = FermionicOperator(h1=molecule.one_body_integrals, h2=molecule.two_body_integrals)
+    qubitOp = ferOp.mapping(map_type='parity', threshold=1E-8)
+    qubitOp = Z2Symmetries.two_qubit_reduction(qubitOp,num_particles)
+    shift = repulsion_energy
+
+    return qubitOp, shift
+
+def get_H2_qubit_op(dist):
+    """
+    Wrapper around get_H2_data to only return the qubit operators
+    """
+    qubitOp, shift = get_H2_data(dist)
+    return qubitOp
+
+def get_H2_shift(dist):
+    """
+    Wrapper around get_H2_data to only return the energy shift
+    """
+    qubitOp, shift = get_H2_data(dist)
+    return shift
+
+def get_LiH_data(dist):
+    """ 
+    Use the qiskit chemistry package to get the qubit Hamiltonian for LiH
+
+    Parameters
+    ----------
+    dist : float
+        The nuclear separations
+
+    Returns
+    -------
+    qubitOp : qiskit.aqua.operators.WeightedPauliOperator
+        Qiskit representation of the qubit Hamiltonian
+    shift : float
+        The ground state of the qubit Hamiltonian needs to be corrected by this amount of
+        energy to give the real physical energy. This includes the replusive energy between
+        the nuclei and the energy shift of the frozen orbitals.
+    """
+    driver = PySCFDriver(atom="Li .0 .0 .0; H .0 .0 " + str(dist), 
+                         unit=UnitsType.ANGSTROM, 
+                         charge=0, 
+                         spin=0, 
+                         basis='sto3g',
+                        )
+    molecule = driver.run()
+    freeze_list = [0]
+    remove_list = [-3, -2]
+    repulsion_energy = molecule.nuclear_repulsion_energy
+    num_particles = molecule.num_alpha + molecule.num_beta
+    num_spin_orbitals = molecule.num_orbitals * 2
+    remove_list = [x % molecule.num_orbitals for x in remove_list]
+    freeze_list = [x % molecule.num_orbitals for x in freeze_list]
+    remove_list = [x - len(freeze_list) for x in remove_list]
+    remove_list += [x + molecule.num_orbitals - len(freeze_list)  for x in remove_list]
+    freeze_list += [x + molecule.num_orbitals for x in freeze_list]
+    ferOp = FermionicOperator(h1=molecule.one_body_integrals, h2=molecule.two_body_integrals)
+    ferOp, energy_shift = ferOp.fermion_mode_freezing(freeze_list)
+    num_spin_orbitals -= len(freeze_list)
+    num_particles -= len(freeze_list)
+    ferOp = ferOp.fermion_mode_elimination(remove_list)
+    num_spin_orbitals -= len(remove_list)
+    qubitOp = ferOp.mapping(map_type='parity', threshold=1E-8)
+    #qubitOp = qubitOp.two_qubit_reduced_operator(num_particles)
+    qubitOp = Z2Symmetries.two_qubit_reduction(qubitOp,num_particles)
+    shift = repulsion_energy + energy_shift
+
+    return qubitOp, shift
+
+def get_LiH_qubit_op(dist):
+    """
+    Wrapper around get_LiH_data to only return the qubit operators
+    """
+    qubitOp, shift = get_LiH_data(dist)
+    return qubitOp
+
+def get_LiH_shift(dist):
+    """
+    Wrapper around get_LiH_data to only return the energy shift
+    """
+    qubitOp, shift = get_LiH_data(dist)
+    return shift
+
+def get_TFIM_qubit_op(
+    N,
+    B,
+    J=1,
+    pbc=False,
+    resolve_degeneracy=False,
+    ):
+    """ 
+    Construct the qubit Hamiltonian for 1d TFIM: H = \sum_{i} ( J Z_i Z_{i+1} + B X_i )
+
+    Parameters
+    ----------
+    N : int
+        The number of spin 1/2 particles in the chain
+    B : float
+        Transverse field strength
+    J : float, optional default 1.
+        Ising interaction strength
+    pbc : boolean, optional default False
+        Set the boundary conditions of the 1d spin chain
+    resolve_degeneracy : boolean, optional default False
+        Lift the ground state degeneracy (when |B*J| < 1) with a small Z field
+
+    Returns
+    -------
+    qubitOp : qiskit.aqua.operators.WeightedPauliOperator
+        Qiskit representation of the qubit Hamiltonian
+    """
+
+    pauli_terms = []
+
+    # ZZ terms
+    pauli_terms += [ (-J,Pauli.from_label('I'*(i)+'ZZ'+'I'*((N-1)-(i+1)))) for i in range(N-1) ]
+    # optional periodic boundary condition term
+    if pbc:
+        pauli_terms += [ (-J,Pauli.from_label('Z'+'I'*(N-2)+'Z')) ]
+    # for B*J<1 the ground state is degenerate, can optionally lift that degeneracy with a 
+    # small Z field
+    if resolve_degeneracy:
+        pauli_terms += [ (np.min([J,B])*1E-3,Pauli.from_label('I'*(i)+'Z'+'I'*(N-(i+1)))) for i in range(N) ]
+    
+    # X terms
+    pauli_terms += [ (-B,Pauli.from_label('I'*(i)+'X'+'I'*(N-(i+1)))) for i in range(N) ]
+
+    qubitOp = wpo(pauli_terms)
+
+    return qubitOp
