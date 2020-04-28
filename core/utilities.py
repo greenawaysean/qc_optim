@@ -222,7 +222,7 @@ def gen_res(bo):
            'gp_params_names':bo.model.model.parameter_names()}
     return res
 
-def gen_default_argsbo(f, domain, nb_init, eval_init=True):
+def gen_default_argsbo(f, domain, nb_init, eval_init=False):
     """ maybe unnecessary"""
     default_args = {
            'model_update_interval':1, 
@@ -238,12 +238,13 @@ def gen_default_argsbo(f, domain, nb_init, eval_init=True):
     domain_bo = [{'name': str(i), 'type': 'continuous', 'domain': d} 
                  for i, d in enumerate(domain)]
     # Generate random x uniformly (could implement other randomness)
-    x_init = np.transpose([np.random.uniform(*d, size = nb_init) for d in domain])
     if eval_init:
+        x_init = np.transpose([np.random.uniform(*d, size = nb_init) for d in domain])
         y_init = f(x_init)
         numdata_init=None
     else:
         y_init = None
+        x_init = None
         numdata_init = nb_init
         
     default_args.update({'f':f, 'domain':domain_bo, 'X':x_init, 'Y':y_init,
@@ -252,9 +253,19 @@ def gen_default_argsbo(f, domain, nb_init, eval_init=True):
     return default_args
 
 def gen_random_str(nb_chars = 5):
+    """ Returns random string of arb length: inc lower, UPPER and digits"""
     choose_from = string.ascii_letters + string.digits
     rnd = ''.join([random.choice(choose_from) for ii in range(nb_chars)])
     return rnd
+
+
+def append_to_names(circ_list, st_to_append):
+    """ Returns a NEW list of circs with new names appended"""
+    circ_list = copy.deepcopy(circ_list)
+    for ii in range(len(circ_list)):
+        circ_list[ii].name = circ_list[ii].name + st_to_append
+    return circ_list
+
 
 # Generate noise models
 def gen_ro_noisemodel(err_proba = [[0.1, 0.1],[0.1,0.1]], qubits=[0,1]): 

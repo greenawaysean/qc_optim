@@ -5,7 +5,12 @@ __all__ = [
     'BayesianOptim',
 ]
 
+import numpy as np
+import utilities as ut
+import copy
+import cost
 from abc import ABC, abstractmethod
+pi = np.pi
 
 class Optimiser(ABC):
     """
@@ -183,7 +188,7 @@ class BayesianOptim(Optimiser):
                 tmp = cc.bind_parameters(dict(zip(self.cost_obj.qk_vars, p)))
                 tmp.name = str(pidx) + tmp.name
                 bound_circs.append(tmp)
-            
+             
         return bound_circs
 
 class BayesianOptimParallel(Optimiser):
@@ -317,3 +322,123 @@ class BayesianOptimParallel(Optimiser):
             new_cost_objs.append(op)
 
         return new_cost_objs
+
+
+class ParallelOptimizer(Optimiser):
+    """ Pretty much similar to the onve above, but different internal workings
+        share_init alows share initial points even if you want seperate (i.e.
+        no info sharing BO's)
+        
+        + Main working allows quick corss evaluatoins via _cross_evaluation
+          Uses _parallel_id and _parallel_x to remember which circ was called
+          with which params"""
+    def __init__(self, 
+                 cost_objs,
+                 optimizer, # to replace with default BO
+                 optimizer_args,
+                 method = 'shared',
+                 share_init = True,
+                 nb_init = 10,
+                 nb_optim = 10): 
+        self.nb_init = nb_init
+        self.nb_optim = nb_optim
+        self.cost_objs = cost_objs
+        self._prefix = ut.gen_random_str(5)
+        self.method = method
+        self._initialised = False
+        self.optimizer = optimizer
+        self._share_init = share_init
+        self.optimizer_args = optimizer_args
+        self.optim_list = self._gen_optim_list()
+        self.circs_to_exec = None
+        self._parallel_x = []
+        self._parallel_id = []
+        self._last_results_obj = None
+    
+    
+    def _gen_optim_list(self):
+        """ Not really needed as a whole seperate function for now, but might be 
+            useful dealith with different types of optmizers"""
+         # add check for list of optim args? 1/optim?
+        optim_list =  [self.optimizer(**self.optimizer_args) for ii in range(len(self.cost_objs))]
+        return optim_list
+
+
+    def _cross_evaluation(self, 
+                          cst_eval_idx, 
+                          cst_input_idx, 
+                          result_idx = 0, 
+                          results_obj = None):
+        """ Can evaluate cost function (via idx) from results that another cost
+            function called. 
+            + If the input cost function requested mutiple new parameter 
+            points, you can spesify which parameter points you want.
+            TODO: allaw vectorized verion of this for fast evaluation"""
+        if results_obj == None:
+            results_obj = self._last_results_obj
+        circ_name = self._parallel_id[cst_input_idx][result_idx]
+        cost_obj = self.cost_objs[cst_eval_idx]
+        x = self._parallel_x[cst_input_idx][result_idx]
+        y = cost_obj.evaluate_cost(results_obj, name = circ_name)
+        return x, y
+    
+
+    def gen_init_circuits(self):
+        """ Generates initial circuits to init the optimizer
+            Main example of how to call mutiple parameter inputs for different
+            cost functions. 
+            I am thinking of making something like this automatic for quick compling 
+            measurement circuits. 
+            TODO: Update init points to take into accout domain (see ut.get_default_args)
+            """
+        circs_to_exec = []
+        if self._share_init:
+            cost_list = [self.cost_objs[0]] # maybe run compatability check here? 
+        else:
+            cost_list = self.cost_objs
+        for cst in cost_list:
+            meas_circuits = cst.meas_circuits
+            qk_params = meas_circuits[0].parameters
+            points = 2*pi*np.random.rand(self.nb_init, len(qk_params)) # update for input domain
+            self._parallel_x.append(points)
+            id_list = copy.deepcopy([])
+            for pt in points:
+                this_id = ut.gen_random_str(8)
+                id_list.append(this_id)
+                named_circs = ut.append_to_names(meas_circuits, this_id)
+                circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
+            self._parallel_id.append(id_list)
+        self.circs_to_exec = circs_to_exec
+        return circs_to_exec
+    
+    
+    def init_optimisers(self, results_obj): 
+        """ Take results object to init each of the optimisers 
+            TODO: allow for more than one intiial """
+        if self._share_init:
+            pass
+        else:
+            raise NotImplementedError
+            
+
+    def next_evaluation_circuits(self):
+        """ Return the next set of Cost function evaluations, in the form of 
+        executable qiskit quantum circuits. Assumes every cost function can 
+        only request 1 param point
+        TODO: Put interface for _compute_next_ev...."""
+        raise Warning('This has not been checked, dont worry if it breaks')
+        x_new = [opt._compute_next_evaluations() for opt in self.optim_list]
+        circs_to_exec = []
+        for cst, pt in zip(self.cost_objs, x_new):
+            circs_to_exec += cost.bind_params(cst.meas_circuits, pt, cst.meas_circuits[0].parameters)
+        self.circs_to_exec = circs_to_exec
+        return circs_to_exec # maybe get rid of these returns
+            
+    
+    def update(self,results_obj):
+        """ Process a new set of data in the form of a results object """
+        if self.method == 'shared':
+            raise NotImplementedError
+        elif self.method == 'independent':
+            raise NotImplementedError
+        

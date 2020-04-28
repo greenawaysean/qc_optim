@@ -5,6 +5,7 @@ Created on Tue Feb 25 18:11:28 2020
 
 @author: fred
 TODO: (SOON) Better impliment the measurements
+TODO: (VERYSOON) Move bind_parameters to utils as it's used in optimisers
 TODO: (SOON) implement more general graph states 
 TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
 DONE: See new class - Batch Concatenated Cost Functions
@@ -49,8 +50,6 @@ __all__ = [
 import abc
 import pdb
 import copy
-import random
-import string
 import numpy as np
 import qiskit as qk
 import utilities as ut
@@ -77,11 +76,13 @@ class CostInterface(metaclass=abc.ABCMeta):
     
     @abc.abstractmethod
     def evaluate_cost(self, results : qk.result.result.Result, 
-                  name = None):
+                      name = None):
         """ Returns the result of the cost function from a qk results object, 
             optional to spesify a name to give the results list
             TODO: extend to allow list of names"""
         raise NotImplementedError
+    
+   
 
 #======================#
 # Base class
@@ -228,14 +229,14 @@ class Cost(CostInterface):
         """ Returns parameter objects in the circuit"""
         return self._qk_vars
     
-    def evaluate_cost(self, result_obj, name = None):
+    def evaluate_cost(self, results_obj, name = None):
         """ Returns cost value from results object/count list"""
         count_list = []
         if name == None:
             name = self.name
-        for ii in range(len(result_obj.results)):
-            if name in result_obj.results[ii].header.name:
-                count_list.append(result_obj.get_counts(ii))
+        for ii in range(len(results_obj.results)):
+            if name in results_obj.results[ii].header.name:
+                count_list.append(results_obj.get_counts(ii))
         return self._meas_func(count_list)
 
     def shot_noise(self, params, nb_experiments=8):
