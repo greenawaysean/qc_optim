@@ -664,6 +664,55 @@ def bind_params(circ, param_values, param_variables):
     bound_circ = [cc.bind_parameters(val_dict) for cc in circ]
     return bound_circ  
 
+#======================#
+# Cross-fidelity class
+#======================#
+
+class CrossFidelity(CostInterface):
+
+    def __init__(self,
+                 comparison_obj,
+                 ansatz,
+                 seed=0,
+                 nb_random=5,
+                 prefix_string='Haar_Random'
+                 ):
+        """
+        """
+
+        # parse comparison object
+        if isinstance(comparison_obj,qk.QuantumCircuit):
+            # recieved a fixed quantum circuit
+            raise NotImplementedError
+        elif isinstance(comparison_obj,AnsatzInterface):
+            # recieved an ansatz object
+            raise NotImplementedError
+        elif type(comparison_obj) == dict:
+
+        else:
+            print("Type of comparison_obj not recognised. Please pass "
+                + "either a results dictionary or a QuantumCircuit.",
+                file=sys.stderr)
+            raise ValueError
+
+        # generate a numpy RandomState using the seed
+        self.rand_state = np.random.RandomState(seed=seed)
+        self.seed = seed
+
+        # store ansatz (add type checking here?)
+        self.ansatz = ansatz
+
+        # store other properties
+        self.nb_random = nb_random
+        self.prefix_string = prefix_string
+
+    def meas_circuits(self):
+
+    def qk_vars(self):
+
+    def evaluate_cost(self,results,name=None):
+
+
 class Batch():
     """ New class that batches circuits together for a single execute.
         MERGE: assumes optim class has .prefix (can be hashed random string)"""
