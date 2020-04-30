@@ -48,9 +48,8 @@ else:
 inst = bem.gen_instance_from_current()
 
 # ===================
-# Use imports to generate Batch evaluation class, different init methods
+# Generate ansatz and const functins (will generalize this in next update)
 # ===================
-
 anz0 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx0)
 anz1 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx1)
 anz2 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx2)
@@ -58,32 +57,31 @@ anz2 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx2)
 cst0 = cost.GHZPauliCost(anz0, inst)
 cst1 = cost.GHZPauliCost(anz1, inst)
 cst2 = cost.GHZPauliCost(anz2, inst)
+
 # ======================== /
 #  Default BO args - consider passing this into an extension of Batch class
 # ======================== /
-
-
 bo_args = ut.gen_default_argsbo(f=lambda x: 0.5, 
                                 domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
-                                nb_init=5,
+                                nb_init=0,
                                 eval_init=False)
 
-# init optim class 
+# ======================== /
+# Init optimiser class
+# ======================== /
 optim = op.ParallelOptimizer([cst0, cst1, cst2], 
                              GPyOpt.methods.BayesianOptimization, 
-                             optimizer_args=bo_args,
-                             share_init=False,
-                             nb_init=5)
+                             optimizer_args = bo_args,
+                             share_init = False,
+                             nb_init = NB_INIT,
+                             method = 'independent')
 
-# NO FUCKING CLUE WHY THIS HAPENS???? eval_init=False should return NONE????
-print(optim.optim_list[0].X)
-print(optim.optim_list[0].Y)
 
 
 # ========================= /
 # But it works:
 # ========================= /
-Batch = cost.Batch(instance=inst)
+Batch = ut.Batch(instance=inst)
 optim.gen_init_circuits()
 Batch.submit(optim)
 Batch.execute()
@@ -94,15 +92,15 @@ optim.init_optimisers(results_obj)
 print(optim.optim_list[0].X)
 print(optim.optim_list[0].Y)
 
-optim.next_evaluation_circuits()
-Batch.submit(optim)
-Batch.execute()
-results_obj = Batch.result(optim)
-optim.update(results_obj)
+for ii in range(NB_ITER):
+    optim.next_evaluation_circuits()
+    Batch.submit(optim)
+    Batch.execute()
+    results_obj = Batch.result(optim)
+    optim.update(results_obj)
 
-# update sucessfull (shared data)
-print(optim.optim_list[0].X)
-print(optim.optim_list[0].Y)
+    # update sucessfull (shared data)
+    print(len(optim.optim_list[0].Y))
 
 #%% Everything here is old and broken
 

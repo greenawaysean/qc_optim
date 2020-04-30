@@ -65,8 +65,8 @@ FULL_LIST_DEVICES = ['ibmq_rochester', 'ibmq_paris', 'ibmq_singapore',
             'ibmq_qasm_simulator'] # '', ibmq_poughkeepsie
 # There may be more free devices
 FREE_LIST_DEVICES = ['ibmq_16_melbourne', 
-                     # 'ibmq_vigo', 
-                     # 'ibmq_armonk',
+                     'ibmq_vigo', 
+                     'ibmq_armonk',
                      # 'ibmq_burlington',
                      # 'ibmq_essex',
                      # 'ibmq_london',
@@ -174,6 +174,123 @@ class BackendManager():
         noise_model = noise.device.basic_device_noise_model(properties, 
                             readout_error=readout_error, gate_error=gate_error)
         return noise_model
+
+
+
+class Batch():
+    """ New class that batches circuits together for a single execute.
+        MERGE: assumes optim class has .prefix (can be hashed random string)
+        + Init with instatnce where all circits will be run on 
+        + Use submit, to build up list of meas circs,
+        + Use execute to send all the jobs to the imbq device
+        + Use result to recall the results relevant to different experiments in the batch"""
+    def __init__(self, instance = None):
+        self.circ_list = []
+        self._last_circ_list = None
+        self._last_results_obj = None
+        self.instance = instance
+        self._known_optims = []
+    
+    def submit(self, obj_in, name = None):
+        """ Adds new circuits requested by the optimizer to the list of circs
+            to execute. 
+            + Can submit optim ParallelOptimiser object directly, OR \n
+            + Can submit list of circuits and a tage (used to request the results)"""
+        if hasattr(obj_in, '__iter__'):
+            assert name != None, " If input is a list of circuits, please provide a name"
+            obj_in = list(obj_in)
+            circ_list = copy.deepcopy(obj_in)
+        else:  # assume input was object
+            name = obj_in.prefix
+            circ_list = copy.deepcopy(obj_in.circs_to_exec)
+        if name in self._known_optims:
+            raise AttributeError("Currently has submitted circuits of same name - please rename")
+        for circ in circ_list:
+            circ.name = name + circ.name
+        self.circ_list += circ_list
+        self._known_optims += [name]
+    
+    def execute(self):
+        results = self.instance.execute(self.circ_list, had_transpiled=True)
+        self._last_results_obj = results
+        self._last_circ_list = self.circ_list
+        self.circ_list = []
+        self._known_optims = []
+    
+    def result(self, obj_in):
+        if type(obj_in) == str:
+            name = obj_in
+        else:
+            name = obj_in.prefix
+        results_di = self._last_results_obj.to_dict()
+        relevant_results = []
+        for experiment in results_di['results']:
+            if name in experiment['header']['name']:
+                experiment['header']['name'] = experiment['header']['name'].split(name)[1]
+                relevant_results.append(experiment)
+        results_di['results'] = relevant_results
+        results_obj = qk.result.result.Result.from_dict(results_di)
+        return results_obj
+     
+    def _batch_create(self, gate_map, ansatz, cost_function, 
+                      nb_params, nb_qubits,
+                      be_manager, nb_shots, optim_lvl, seed):
+        """ TODO: Make seperate function when we make batch.py
+            Idea is to spam many cost functions for the optimizers"""
+        raise NotImplementedError
+        def _gen_inst_list(self, nb_shots, optim_lvl):
+            """ Generates a list of instances with different layouts from which the 
+                circuits are transpiled. These instances are NEVER used to execute"""
+            gate_map = self.gate_map
+            inst_list = []
+            for gm in gate_map:
+                inst = self._backend_manager.gen_instance_from_current(nb_shots=nb_shots,
+                                                                       optim_lvl=optim_lvl,
+                                                                       initial_layout=gm,
+                                                                       seed_transpiler=self.seed)
+                inst_list.append(inst)
+            return inst_list
+        self._instance_list = self._gen_inst_list(nb_shots=nb_shots,
+                                                  optim_lvl=optim_lvl)
+        self.seed = seed
+        self._backend_manager = be_manager
+        self.ansatz = np.atleast_1d(ansatz).tolist()
+        self.cost_function = np.atleast_1d(cost_function).tolist()
+        self.gate_map = np.atleast_2d(gate_map).tolist()
+        """ Returns a list of cost classes for each of inputs"""
+        if len(self.cost_function) > 1 and len(self.ansatz) > 1 and len(self.gate_map) > 1:
+            raise NotImplementedError()
+        cost_list = []    
+        if len(self.cost_function) > 1:
+            # iter over cost functions
+            instance = self._instance_list[0]
+            ansatz = self.ansatz[0]
+            for cf in self.cost_function:
+                cost_list.append(cf(ansatz = ansatz,
+                                    N = nb_qubits,
+                                    instance = instance,
+                                    nb_params = nb_params))
+        elif len(self.ansatz) > 1:
+            # iter over ansatz
+            cost_function = self.cost_function[0]
+            instance = self._instance_list[0]
+            for ans in self.ansatz:
+                cost_list.append(cost_function(ansatz = ans,
+                                               N = nb_qubits, 
+                                               instance = instance, 
+                                               nb_params = nb_params))
+        elif len(self.gate_map) > 1:
+            # iter over gate map
+            cost_function = self.cost_function[0]
+            ansatz = self.ansatz[0]
+            for inst in self._instance_list:
+                cost_list.append(cost_function(ansatz = ansatz,
+                                               N = nb_qubits, 
+                                               instance = inst, 
+                                               nb_params = nb_params))
+        return cost_list
+    
+    
 
 # ------------------------------------------------------
 # BO related utilities
