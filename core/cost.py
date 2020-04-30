@@ -49,6 +49,7 @@ __all__ = [
 
 import abc
 import pdb
+import sys
 import copy
 import numpy as np
 import qiskit as qk
@@ -62,6 +63,7 @@ pi =np.pi
 #======================#
 class CostInterface(metaclass=abc.ABCMeta):
     """ Impliments interface that can be used in batch processing"""
+
     @property
     @abc.abstractmethod
     def meas_circuits(self):
@@ -673,6 +675,7 @@ class CrossFidelity(CostInterface):
     def __init__(self,
                  comparison_obj,
                  ansatz,
+                 quantum_instance,
                  seed=0,
                  nb_random=5,
                  prefix_string='Haar_Random'
@@ -688,7 +691,9 @@ class CrossFidelity(CostInterface):
             # recieved an ansatz object
             raise NotImplementedError
         elif type(comparison_obj) == dict:
-
+            # recieve a results dictionary
+            # could have checking here on the results dictionary
+            pass
         else:
             print("Type of comparison_obj not recognised. Please pass "
                 + "either a results dictionary or a QuantumCircuit.",
@@ -697,21 +702,77 @@ class CrossFidelity(CostInterface):
 
         # generate a numpy RandomState using the seed
         self.rand_state = np.random.RandomState(seed=seed)
-        self.seed = seed
 
         # store ansatz (add type checking here?)
         self.ansatz = ansatz
 
+        # store quantum instance
+        self.quantum_instance = quantum_instance
+
         # store other properties
-        self.nb_random = nb_random
-        self.prefix_string = prefix_string
+        self._nb_random = nb_random
+        self._prefix_string = prefix_string
+        self._seed = seed
 
     def meas_circuits(self):
+        pass
 
     def qk_vars(self):
+        pass
 
     def evaluate_cost(self,results,name=None):
+        pass
 
+    def _append_random_unitaries_single_circ(self):
+        """ 
+        Creates a list of self._nb_random circuits with Haar random unitaries
+        """
+        
+
+
+        
+        circ_list = []
+        # Run over different numbers of circuits
+        for ii in range(nb_random):
+            # Fix circuit and set random seed (so each block has SAME unitaries)
+            this_circ = copy.deepcopy(circ)
+            this_circ.name = prefix + '_' +  str(ii) + '_' + this_circ.name
+            nb_qubits = this_circ.qregs[qregs_blocks[0]].size
+            seeds = np.random.randint(0, 2**32, nb_qubits)
+            for qregs_block in qregs_blocks:
+                this_circ = _random_measurement_helper(this_circ, 
+                                                       qregs_block=qregs_block, 
+                                                        seeds=seeds)
+            circ_list.append(this_circ)
+        return circ_list
+
+
+    def _random_measurement_helper(circ, 
+                                   seeds, 
+                                   qregs_block=0):
+        """Appends (seeded) random unitaries for a circuit
+            - Will modify input circ if the input circ is passes as object
+            - Not made to be interacted with directly 
+            - Adds measurement registers with same name as qregs_block
+            - Assumes circuit construction is created with single /mutiple blocks"""
+        # get the registers to measure and add classical bits
+        qregs = circ.qregs[qregs_block]
+        nb_qubits = qregs.size
+        cbits = qk.ClassicalRegister(nb_qubits, 'cl_'+qregs.name)
+        circ.add_register(cbits)
+
+        
+        # generate Haar random (with known seeds)
+       # if type(seeds) is not list:
+       #     seeds = np.random.randint(0, 2**32, nb_qubits)
+        u_random = [qk.quantum_info.random_unitary(2, seed=seeds[ii]) 
+                    for ii in range(nb_qubits)]
+        
+        # append unitaries and measure to right classical registers
+        for ii in range(nb_qubits):
+            circ.append(u_random[ii], [qregs[ii]])
+        circ.measure(qregs, cbits)
+        return circ
 
 class Batch():
     """ New class that batches circuits together for a single execute.
