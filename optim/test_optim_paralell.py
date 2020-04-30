@@ -71,13 +71,11 @@ bo_args = ut.gen_default_argsbo(f=lambda x: 0.5,
 # ======================== /
 optim = op.ParallelOptimizer([cst0, cst1, cst2], 
                              GPyOpt.methods.BayesianOptimization, 
-                             optimizer_args=bo_args,
-                             share_init=False,
-                             nb_init=5)
+                             optimizer_args = bo_args,
+                             share_init = False,
+                             nb_init = NB_INIT,
+                             method = 'independent')
 
-# NO FUCKING CLUE WHY THIS HAPENS???? eval_init=False should return NONE????
-print(optim.optim_list[0].X)
-print(optim.optim_list[0].Y)
 
 
 # ========================= /
@@ -86,25 +84,23 @@ print(optim.optim_list[0].Y)
 Batch = ut.Batch(instance=inst)
 optim.gen_init_circuits()
 Batch.submit(optim)
-Batch.submit(optim.circs_to_exec, 'this_is_a_test_of_naming')
 Batch.execute()
 results_obj = Batch.result(optim)
-other_results_obj = Batch.result('this_is_a_test_of_naming')
 optim.init_optimisers(results_obj)
 
 # optimizers now have new init info. 
 print(optim.optim_list[0].X)
 print(optim.optim_list[0].Y)
 
-optim.next_evaluation_circuits()
-Batch.submit(optim)
-Batch.execute()
-results_obj = Batch.result(optim)
-optim.update(results_obj)
+for ii in range(NB_ITER):
+    optim.next_evaluation_circuits()
+    Batch.submit(optim)
+    Batch.execute()
+    results_obj = Batch.result(optim)
+    optim.update(results_obj)
 
-# update sucessfull (shared data)
-print(optim.optim_list[0].X)
-print(optim.optim_list[0].Y)
+    # update sucessfull (shared data)
+    print(len(optim.optim_list[0].Y))
 
 #%% Everything here is old and broken
 

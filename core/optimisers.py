@@ -381,7 +381,8 @@ class ParallelOptimizer(Optimiser):
                     else:
                         tuples.append((ii, ii, jj-ii))
             return tuples
-        
+
+
     def _get_padding_circuits():
         raise NotImplementedError
 
@@ -452,14 +453,16 @@ class ParallelOptimizer(Optimiser):
         [opt.run_optimization(max_iter = 0, eps = 0) for opt in self.optim_list]
             
 
-    def next_evaluation_circuits(self):
+    def next_evaluation_circuits(self, x_new = None):
         """ Return the next set of Cost function evaluations, in the form of 
         executable qiskit quantum circuits. Assumes every cost function can 
         only request 1 param point
+        x_new must be an iterable with exactly 1 param point per cost function
         TODO: Put interface for _compute_next_ev...."""
         self._parallel_id = []
         self._parallel_x = []
-        x_new = np.atleast_2d(np.squeeze([opt._compute_next_evaluations() for opt in self.optim_list]))
+        if type(x_new) == ut.NoneType:
+            x_new = np.atleast_2d(np.squeeze([opt._compute_next_evaluations() for opt in self.optim_list]))
         circs_to_exec = []
         for cst, pt in zip(self.cost_objs, x_new):
             this_id = ut.gen_random_str(8)
@@ -469,34 +472,18 @@ class ParallelOptimizer(Optimiser):
             circs_to_exec += cost.bind_params(named_circs, pt, cst.meas_circuits[0].parameters)
         self.circs_to_exec = circs_to_exec #+ self._get_padding_circuits()
         return circs_to_exec # maybe get rid of these returns
-            
     
+
     def update(self, results_obj):
-        self._last_results_obj = results_obj
         """ Process a new set of data in the form of a results object, 
             Uses self._sharing_matrix to decide how to allocate results to 
             optimisers"""
+        self._last_results_obj = results_obj
         for evl, req, par in self._sharing_matrix:
             x, y = self._cross_evaluation(evl, req, par)
             opt = self.optim_list[evl]
             opt.X = np.vstack((opt.X, x))
             opt.Y = np.vstack((opt.Y, y))
-    
+            
 
        
-
-# for iter_idx in range(NB_ITER):
-#     Bopt._update_model(Bopt.normalization_type) # to verif
-
-#     if(update_weights):
-#         Bopt.acquisition.exploration_weight = dynamics_weight(iter_idx)
-    
-#     #suggested parameters
-#     Xnew = Bopt._compute_next_evaluations()
-    
-#     #### EVAL FOR THE NEW SUGGESTION <- where you would do extra stuff
-#     Ynew = cost_bo(Xnew)
-
-#     #Incorporate new data Augment X
-#     Bopt.X = np.vstack((Bopt.X, Xnew))
-#     Bopt.Y = np.vstack((Bopt.Y, Ynew))
