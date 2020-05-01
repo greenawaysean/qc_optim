@@ -373,6 +373,17 @@ def count_params_from_func(ansatz):
 # ----------------------------------------
 # Useful function circuits that have been checked
 # ----------------------------------------
+def _1qubit_2_params_XZ(params, barriers = True):
+    """ Returns function handle for 1 qubit Rx Rz preparation
+    With barrier by default"""
+    logical_qubits = qk.QuantumRegister(1, 'logical')
+    c = qk.QuantumCircuit(logical_qubits)
+    c.rx(params[0], qubit=0)
+    if barriers: c.barrier()
+    c.rz(params[1], qubit=0)
+    if barriers: c.barrier()
+    return c
+
 def _GHZ_3qubits_6_params_cx0(params, barriers = False):
     """ Returns function handle for 6 param ghz state"""
     logical_qubits = qk.QuantumRegister(3, 'logicals')
