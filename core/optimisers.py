@@ -325,13 +325,27 @@ class BayesianOptimParallel(Optimiser):
 
 
 class ParallelOptimizer(Optimiser):
-    """ Pretty much similar to the onve above, but different internal workings
-        share_init alows share initial points even if you want seperate (i.e.
-        no info sharing BO's)
-        
-        + Main working allows quick corss evaluatoins via _cross_evaluation
-          Uses _parallel_id and _parallel_x to remember which circ was called
-          with which params"""
+    """ 
+    Class that wraps a set of quantum optimisation tasks. It separates 
+    out the cost function evaluation requests from the updating of the 
+    internal state of the optimisers to allow aggregation of quantum 
+    jobs. It also supports different information sharing approaches 
+    between the set of optimisers (see 'method' arg under __init__)
+
+    TODO
+    ----
+    _gen_optim_list : add check for list of optim args? 1/optim?
+    _cross_evaluation : allow vectorized verion for fast evaluation?
+    gen_init_circuits : Update init points to take into accout domain 
+        (see ut.get_default_args)
+    gen_init_circuits : Making something like this automatic for quick 
+        compling measurement circuits
+    init_optimisers : allow for more than one initial 
+    next_evaluation_circuits  : Put interface for _compute_next_ev....
+    update & init_optimisers : generalise beyond BO optimisers
+    update : implement by-hand updating of dynamic weights?
+    """
+
     def __init__(self, 
                  cost_objs,
                  optimizer, # to replace default BO, extend to list? 
@@ -339,22 +353,87 @@ class ParallelOptimizer(Optimiser):
                  method = 'shared',
                  share_init = True,
                  nb_init = 10,
-                 nb_optim = 10): 
+                 nb_optim = 10,
+                 ): 
+        """ 
+        Parameters
+        ----------
+        cost_objs : list of Cost objects
+            Cost functions being max/minimised by the internal optimsers
+        optimizer : **class/list of classes under some interface?**
+            Class(es) of individual internal optimiser objects
+        optimizer_args : { dict, list of dicts }
+            The initialisation args to pass to the internal optimisation 
+            objects, either a single set to be passed to all or a list to
+            be distributed over the optimisers
+        method : {'independent','shared','random','left','right'}
+            This controls the evaluation sharing of the internal optimiser 
+            objects, cases:
+                'independent' : The optimiser do not share data, each only 
+                    recieves its own evaluations.
+                'shared' :  Each optimiser obj gains access to evaluations 
+                    of all the others. 
+                'random1' : The optimsers do not get the evaluations others 
+                    have requested, but in addition to their own they get an 
+                    equivalent number of randomly chosen parameter points 
+                'random2' : The optimisers do not get the evaluations others 
+                    have requested, but in addition to their own they get an 
+                    equivalent number of randomly chosen parameter points. 
+                    These points are not chosen fully at random, but instead 
+                    if x1 and x2 are opt[1] and opt[2]'s chosen evaluations 
+                    respectively then opt[1] get an additional point y2 that 
+                    is |x2-x1| away from x1 but in a random direction, 
+                    similar for opt[2], etc. (Only really relevant to BO.)
+                'left', 'right' : Implement information sharing but in a 
+                    directional way, so that (using 'left' as an example) 
+                    opt[1] gets its evaluation as well as opt[0]; opt[2] gets 
+                    its point as well as opt[1] and opt[0], etc. To ensure all 
+                    BO's get an equal number of evaluations this is padded 
+                    with random points. These points are not chosen fully at 
+                    random, they are chosen in the same way as 'random2' 
+                    described above. (Only really relevant to BO.)
+        share_init : boolean, optional
+            Do the optimiser objects share initialisation data, or does each
+            generate their own set?
+        nb_init : int or keyword 'max', default 'max'
+            (BO) Sets the number of initial data points to feed into the BO 
+            before starting iteration rounds. If set to 'max' it will 
+            generate the maximum number of initial points such that it 
+            submits `init_jobs` worth of circuits to a qiskit backend.
+        init_jobs : int, default 1
+            (BO) The number of qiskit jobs to use to generate initial data. 
+            (Most real device backends accept up to 900 circuits in one job.)
+        """
+        # make (almost certainly) unique id
+        self._prefix = ut.gen_random_str(5)
+
+        # check the method arg is recognised
+        if not method in ['independent','shared','left','right']:
+            print('method '+f'{method}'+' not recognised, please choose: '
+                +'"independent", "shared", "left" or "right".',file=sys.stderr)
+            raise ValueError
+        elif method in ['random1','random2']:
+            raise NotImplementedError
+
+        # store inputs
+        self.cost_objs = cost_objs
+        self.optimizer = optimizer
+        self.optimizer_args = optimizer_args
+        self.method = method
+        self._share_init = share_init
         self.nb_init = nb_init
         self.nb_optim = nb_optim
-        self.cost_objs = cost_objs
-        self._prefix = ut.gen_random_str(5)
-        self.method = method
-        self._initialised = False
-        self.optimizer = optimizer
-        self._share_init = share_init
-        self.optimizer_args = optimizer_args
+        
+        # make internal assets
         self.optim_list = self._gen_optim_list()
+        self._sharing_matrix = self._gen_sharing_matrix()
         self.circs_to_exec = None
         self._parallel_x = {}
         self._parallel_id = {}
         self._last_results_obj = None
-        self._sharing_matrix = self._gen_sharing_matrix()
+        
+        # unused currently
+        self._initialised = False
     
     
     def _gen_optim_list(self):
@@ -366,7 +445,6 @@ class ParallelOptimizer(Optimiser):
         Not really needed as a whole seperate function for now, but might be 
         useful dealing with different types of optmizers
         """
-        # add check for list of optim args? 1/optim?
         optim_list =  [self.optimizer(**self.optimizer_args) for ii in range(len(self.cost_objs))]
         return optim_list
     
@@ -395,10 +473,28 @@ class ParallelOptimizer(Optimiser):
             # sanity check
             assert len(tuples)==nb_optim*nb_optim
             return tuples
+        elif self.method == 'right':
+            tuples = []
+            for consumer_idx in range(nb_optim):
+                for generator_idx in range(nb_optim):
+                    if consumer_idx <= generator_idx:
+                        # higher indexed optims consume the evaluations generated by
+                        # lower indexed optims
+                        tuples.append((consumer_idx,generator_idx,generator_idx))
+                    else:
+                        # lower indexed optims generate extra 'padding' evaluations so
+                        # that they recieve the same number of new data points
+                        tuples.append((consumer_idx,consumer_idx,generator_idx))
+            # sanity check
+            assert len(tuples)==nb_optim*nb_optim
+            return tuples
 
 
     def _get_padding_circuits(self):
         """
+        Different sharing modes e.g. 'left' and 'right' require padding
+        of the evaluations requested by the optimisers with other random
+        points, generate those circuits here
         """
         def _find_min_dist(a,b):
             """
@@ -443,36 +539,41 @@ class ParallelOptimizer(Optimiser):
 
     def _cross_evaluation(self, 
                           cst_eval_idx, 
-                          cst_input_idx, 
-                          result_idx=None, 
+                          optim_requester_idx, 
+                          point_idx=None, 
                           results_obj=None):
         """ 
-        Can evaluate cost function (via idx) from results that another cost
-        function called. 
-        + If the input cost function requested mutiple new parameter 
-        points, you can spesify which parameter points you want.
-        TODO: allow vectorized verion of this for fast evaluation
-            """
+        Evaluate the results of an experiment allowing sharing of data 
+        between the different internal optimisers
+
+        Parameters
+        ----------
+        cst_eval_idx : int
+            Index of the optim/cost function that we will evaluate the 
+            point against
+        optim_requester_idx : int
+            Index of the optim that requested the point being considered
+        point_idx : int, optional, defaults to optim_requester_idx
+            Subindex of the point inside the set of points that optim 
+            optim_requester_idx requested
+        results_obj : Qiskit results obj, optional, defaults to last got
+            The experiment results to use
+        """
         if results_obj is None:
             results_obj = self._last_results_obj
-        if result_idx is None:
-            result_idx = cst_input_idx
-        circ_name = self._parallel_id[cst_input_idx,result_idx]
+        if point_idx is None:
+            point_idx = optim_requester_idx
+        circ_name = self._parallel_id[optim_requester_idx,point_idx]
         cost_obj = self.cost_objs[cst_eval_idx]
-        x = self._parallel_x[cst_input_idx,result_idx]
+        x = self._parallel_x[optim_requester_idx,point_idx]
         y = cost_obj.evaluate_cost(results_obj, name = circ_name)
-        #print(f'{cst_eval_idx}'+' '+f'{cst_input_idx}'+' '+f'{result_idx}'+':'+f'{circ_name}')
+        #print(f'{cst_eval_idx}'+' '+f'{optim_requester_idx}'+' '+f'{point_idx}'+':'+f'{circ_name}')
         return x, y
     
 
     def gen_init_circuits(self):
         """ 
-        Generates initial circuits to init the optimizer
-        Main example of how to call mutiple parameter inputs for different
-        cost functions. 
-        I am thinking of making something like this automatic for quick compling 
-        measurement circuits. 
-        TODO: Update init points to take into accout domain (see ut.get_default_args)
+        Generates circuits to gather initialisation data for the optimizers
         """
         circs_to_exec = []
         if self._share_init:
@@ -482,7 +583,7 @@ class ParallelOptimizer(Optimiser):
         for cst_idx,cst in enumerate(cost_list):
             meas_circuits = cst.meas_circuits
             qk_params = meas_circuits[0].parameters
-            points = 2*pi*np.random.rand(self.nb_init, len(qk_params)) # update for input domain
+            points = 2*pi*np.random.rand(self.nb_init, len(qk_params))
             #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
             for pt_idx,pt in enumerate(points):
                 this_id = ut.gen_random_str(8)
@@ -496,8 +597,12 @@ class ParallelOptimizer(Optimiser):
     
     def init_optimisers(self, results_obj): 
         """ 
-        Take results object to init each of the optimisers 
-        TODO: allow for more than one intiial 
+        Take results object to initalise the internal optimisers 
+
+        Parameters
+        ----------
+        results_obj : Qiskit results obj
+            The experiment results to use
         """
         self._last_results_obj= results_obj
         nb_optim = len(self.optim_list)
@@ -514,17 +619,21 @@ class ParallelOptimizer(Optimiser):
         [opt.run_optimization(max_iter = 0, eps = 0) for opt in self.optim_list]
             
 
-    def next_evaluation_circuits(self, x_new = None):
+    def next_evaluation_circuits(self, x_new=None):
         """ 
-        Return the next set of Cost function evaluations, in the form of 
-        executable qiskit quantum circuits. Assumes every cost function can 
-        only request 1 param point
-        x_new must be an iterable with exactly 1 param point per cost function
-        TODO: Put interface for _compute_next_ev....
+        Return the set of executable (i.e. transpiled and bound) quantum 
+        circuits that will carry out cost function evaluations at the 
+        points requested by each of the internal optimisers
+        
+        Parameters
+        ----------
+        x_new : list of x vals, optional
+            An iterable with exactly 1 param point per cost function, if None
+            is passed the function will query the internal optimisers
         """
         self._parallel_id = {}
         self._parallel_x = {}
-        if type(x_new) == ut.NoneType:
+        if x_new is None:
             x_new = np.atleast_2d(np.squeeze([opt._compute_next_evaluations() for opt in self.optim_list]))
         circs_to_exec = []
         for cst_idx,(cst,pt) in enumerate(zip(self.cost_objs, x_new)):
@@ -536,22 +645,18 @@ class ParallelOptimizer(Optimiser):
         circs_to_exec = circs_to_exec + self._get_padding_circuits()
 
         # sanity check on number of circuits generated
-        # BROKEN, needs to account for the number of measurement circuits 
-        # each cost function has
-        """
         if self.method in ['independent','shared']:
-            assert len(circs_to_exec)==len(self.cost_objs),('Should have '
+            assert len(self._parallel_id.keys())==len(self.cost_objs),('Should have '
                 +f'{len(self.cost_objs)}'+' circuits, but instead have '
-                +f'{len(circs_to_exec)}')
+                +f'{len(self._parallel_id.keys())}')
         elif self.method in ['random1','random2']:
-            assert len(circs_to_exec)==len(self.cost_objs)**2,('Should have '
+            assert len(self._parallel_id.keys())==len(self.cost_objs)**2,('Should have '
                 +f'{len(self.cost_objs)**2}'+' circuits, but instead have '
-                +f'{len(circs_to_exec)}')
+                +f'{len(self._parallel_id.keys())}')
         elif self.method in ['left','right']:
-            assert len(circs_to_exec)==len(self.cost_objs)*(len(self.cost_objs)+1)//2,('Should have '
+            assert len(self._parallel_id.keys())==len(self.cost_objs)*(len(self.cost_objs)+1)//2,('Should have '
                 +f'{len(self.cost_objs)*(len(self.cost_objs)+1)//2}'
-                +' circuits, but instead have '+f'{len(circs_to_exec)}')
-        """
+                +' circuits, but instead have '+f'{len(self._parallel_id.keys())}')
 
         self.circs_to_exec = circs_to_exec
         return circs_to_exec
@@ -559,15 +664,22 @@ class ParallelOptimizer(Optimiser):
     
 
     def update(self, results_obj):
-        """ Process a new set of data in the form of a results object, 
-            Uses self._sharing_matrix to decide how to allocate results to 
-            optimisers"""
+        """ 
+        Update the internal state of the optimisers, currently specific
+        to Bayesian optimisers
+            
+        Parameters
+        ----------
+        results_obj : Qiskit results obj
+            The experiment results to use
+        """
         self._last_results_obj = results_obj
         for evl, req, par in self._sharing_matrix:
             x, y = self._cross_evaluation(evl, req, par)
             opt = self.optim_list[evl]
             opt.X = np.vstack((opt.X, x))
             opt.Y = np.vstack((opt.Y, y))
-            
 
-       
+        for opt in self.optim_list:
+            opt._update_model(opt.normalization_type)
+
