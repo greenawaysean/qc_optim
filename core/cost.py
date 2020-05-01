@@ -4,13 +4,17 @@
 Created on Tue Feb 25 18:11:28 2020
 
 @author: fred
-TODO: (SOON) Better impliment the measurements
+TODO: (SOON) Better implement the measurements
 TODO: (VERYSOON) Move bind_parameters to utils as it's used in optimisers
 TODO: (SOON) implement more general graph states 
 TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
 DONE: See new class - Batch Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
 TODO: (LATER) implement sampling (of the measurement settings) strategy
+
+TODO: (FRED) Remove noise_model as it should be defined in the init of the instance
+TODO: (FRED) Reimplement the max_circuit rule
+
 
 CHANGES
 * Cost now conforms to CostInterface
@@ -38,7 +42,7 @@ pi =np.pi
 # Basic cost interface
 #======================#
 class CostInterface(metaclass=abc.ABCMeta):
-    """ Impliments interface that can be used in batch processing"""
+    """ Implements interface that can be used in batch processing"""
     @property
     @abc.abstractmethod
     def meas_circuits(self):
@@ -113,18 +117,17 @@ class Cost(CostInterface):
                   error_correction = False,
                   name = None, **args):
         """ initialize the cost function taking as input parameters:
-            + ansatz : either a function taking parameters as input and 
-                       returning a circuit, 
-                       or a transpiled circuit
-            + N <int>: the number of qubits
-            + instance (QuantumInstance)
+            + ansatz : Ansatz object
+            + instance: (QuantumInstance)
+            + keep_res
+            + 
         """
         if debug: pdb.set_trace()
         self.name = name
         self.ansatz = ansatz
         self.instance = instance
         self.nb_qubits = ansatz.nb_qubits  # may be redundant
-        self.dim = np.power(2,ansatz.nb_qubits)
+        self.dim = np.power(2, ansatz.nb_qubits)
         self.nb_params = ansatz.nb_params # maybe redundant
         self.fix_transpile = fix_transpile # is it needed
         self.verbose = verbose
@@ -302,6 +305,63 @@ def compare_layout(circ1, circ2):
     test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
     return test
 
+
+#======================#
+# Subclasses: one-qubit related costs
+#======================#
+class OneQProjZ(Cost):
+    """ Fidelity w.r.t. to the target state |1> """   
+    def _gen_list_meas(self):
+        """ 1 measurement settings"""
+        return ['z']
+    
+    def _gen_meas_func(self):
+        """ return the frequency of counts"""
+        def meas_func(counts):
+            return 1 - freq_even(counts[0]) 
+        return meas_func
+
+
+class OneQXYZ(Cost):
+    """ Fidelity w.r.t. to a 1qubit target state specified in terms of its 
+    decomposition in the Pauli basis"""   
+    def __init__(self, ansatz, instance, coeffs = None, decompose = False, 
+        fix_transpile = True, keep_res = True, verbose = True, noise_model = None, 
+        debug = False, error_correction = False):
+        """ 
+        coeffs: list of size 3 with elements [a_x = <X>tgt, a_y = <Y>tgt, a_z = <Z>tgt] 
+                s.t psi_tgt =  1/2 (a_x X + a_y Y +a_z Z)
+                if None is passed they will be randomly generated
+                In both case they are normalized (i.e. the target state is pure)
+        decompose: if True the estimated fidelity is returned when calling the object
+                   if False return an array with the 3 frequencies
+        """
+        if coeffs is None:
+            coeffs = np.random.uniform(size=3)
+        coeffs /= np.dot(coeffs, coeffs)
+        self.coeffs = coeffs
+        self.decompose = decompose
+        super(OneQXYZ, self).__init__(ansatz,  instance, fix_transpile, keep_res, 
+                            verbose, noise_model, debug, error_correction)
+
+    def _gen_list_meas(self):
+        """ 3 measurement settings"""
+        return ['x','y','z']
+    
+    def _gen_meas_func(self):
+        """ depending on the state of self.decompose will return a function outputing
+        either the weighted sum of the expectation values (decompose=False) or 
+        an array with the estimated frequencies"""
+        weights = self.coeffs
+        dim = self.dim
+        if self.decompose:
+            def meas_func(counts):
+                return [freq_even(c) for c in counts]
+        else:
+            def meas_func(counts):
+                return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
+        return meas_func
+    
 
 #======================#
 # Subclasses: GHZ related costs
@@ -665,44 +725,52 @@ def bind_params(circ, param_values, param_variables):
         
 #%%
 # -------------------------------------------------------------- #
-
 if __name__ == '__main__':
-    from qiskit.test.mock import FakeRochester
+    #from qiskit.test.mock import FakeRochester
+    #fake = FakeRochester() # not working
     import ansatz as anz
-    fake = FakeRochester() # not working
     simulator = qk.Aer.get_backend('qasm_simulator')
+    inst = qk.aqua.QuantumInstance(simulator, shots=8192, optimization_level=3)
     backends = [simulator]
-    sim = simulator
+    
     for sim in backends:
         #-----#
         # Verif conventions
         #-----#
-        ansatz = anz.AnsatzFromFunction(anz._GHZ_3qubits_6_params_cx0)
-        
+        fun_ansatz = anz._GHZ_3qubits_6_params_cx0
+        ansatz = anz.AnsatzFromFunction(fun_ansatz)
         bound_circ = bind_params(ansatz.circuit, [1,2,3,4,5,6], ansatz.circuit.parameters)
         
-        inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
         transpiled_cir = inst.transpile(bound_circ)[0]
         m_c = gen_meas_circuits(transpiled_cir, ['zzz'])
         res = inst.execute(m_c)
         counts = res.get_counts()
         
         #-----#
+        # One qubit task
+        #-----#
+        ansatz = anz.AnsatzFromFunction(anz._1qubit_2_params_XZ)
+        X_SOL = np.pi/4 * np.ones(2)
+            
+        coeffs = np.array([0.5, -0.5, np.sqrt(1/2)])
+        cost1q = OneQXYZ(ansatz, inst, coeffs = coeffs, decompose = False)
+        assert np.abs(cost1q(X_SOL) - 1) < 0.01, "For this ansatz, parameters, cost function should be close to one (stat fluctuations)"
+
+        cost1q = OneQXYZ(ansatz, inst, coeffs = coeffs, decompose = True)
+        assert np.all(np.abs(2*cost1q(X_SOL) - 1 -coeffs) < 0.05)  
+        
+        #-----#
         # GHZ
         #-----#
         # Create an ansatz capable of generating a GHZ state (not the most obvious 
         # one here) with the set of params X_SOL
-
         X_SOL = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
         X_LOC = np.pi/2 * np.array([1., 0., 4., 0., 3., 0.])
         X_RDM = np.random.uniform(0.0, 2*pi, size=(6,1))
-        
-        # Create an instance
-        sim = qk.Aer.get_backend('qasm_simulator')
-        inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
-        
+                
         # Verif the values of the different GHZ cost
         # Fidelity
+        ansatz = anz.AnsatzFromFunction(anz._GHZ_3qubits_6_params_cx0)
         ghz_cost = GHZPauliCost(ansatz=ansatz, instance = inst)
         assert ghz_cost(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
         assert np.abs(ghz_cost(X_LOC) - 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.5 (up to sampling error)"
@@ -730,9 +798,7 @@ if __name__ == '__main__':
         X_RDM = np.array([1.70386471,1.38266762,3.4257722,5.78064,3.84102323,2.37653078])
         #X_RDM = np.random.uniform(low=0., high=2*np.pi, size=(N_params,))
         
-        # Create an instance
-        sim = qk.Aer.get_backend('qasm_simulator')
-        inst = qk.aqua.QuantumInstance(sim, shots=8192, optimization_level=3)
+
         graph_cost = GraphCyclPauliCost(ansatz=ansatz, instance = inst)
         
         fid_opt = graph_cost(X_SOL)

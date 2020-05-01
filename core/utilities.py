@@ -10,7 +10,7 @@ Miscellaneous utilities (may be split at some point):
     ++ Manages saving optimizer results
     ++ Results class added (not backwards compatible before 07/04/2020)
     
-    
+TODO: (FRED) Happy to deprecate add_path_GPyOpt/get_path_GPyOpt
     
 """
 from qiskit.providers.aer.noise import NoiseModel
@@ -35,10 +35,10 @@ FULL_LIST_DEVICES = ['ibmq_rochester', 'ibmq_paris', 'ibmq_singapore',
 FREE_LIST_DEVICES = ['ibmq_16_melbourne', 
                      'ibmq_vigo', 
                      'ibmq_armonk',
-                     # 'ibmq_burlington',
-                     # 'ibmq_essex',
-                     # 'ibmq_london',
-                     # 'ibmq_ourense',
+                     'ibmq_essex',
+                     'ibmq_burlington',
+                     'ibmq_london',
+                     'ibmq_rome',
                      'qasm_simulator']
 
 
@@ -299,7 +299,7 @@ def get_best_from_bo(bo):
 
 def gen_res(bo):
     """ Generate a dictionary from a BO object to be stored"""
-    (x_obs, y_obs), (x_pred, y_pred) = get_best_from_bo(bo)
+    (x_obs, y_obs), (x_pred, y_pred) = bo.get_best()
     res = {'x_obs':x_obs, 
            'x_pred':x_pred, 
            'y_obs':y_obs, 
@@ -310,7 +310,8 @@ def gen_res(bo):
            'gp_params_names':bo.model.model.parameter_names()}
     return res
 
-def gen_default_argsbo(f, domain, nb_init, eval_init=False):
+
+def gen_default_argsbo(f, domain, nb_init, eval_init=False, x_init=None):
     """ maybe unnecessary"""
     default_args = {
            'model_update_interval':1, 
@@ -325,7 +326,9 @@ def gen_default_argsbo(f, domain, nb_init, eval_init=False):
     
     domain_bo = [{'name': str(i), 'type': 'continuous', 'domain': d} 
                  for i, d in enumerate(domain)]
-    # Generate random x uniformly (could implement other randomness)
+    # Generate random x uniformly (could implement other randomness) if not provided
+    if x_init is None:
+        x_init = np.transpose([np.random.uniform(*d, size = nb_init) for d in domain])
     if eval_init:
         x_init = np.transpose([np.random.uniform(*d, size = nb_init) for d in domain])
         y_init = f(x_init)
@@ -632,7 +635,6 @@ class Results():
 # ------------------------------------------------------
 # Chemistry related helper functions
 # ------------------------------------------------------
-
 def get_H2_data(dist):
     """ 
     Use the qiskit chemistry package to get the qubit Hamiltonian for LiH
