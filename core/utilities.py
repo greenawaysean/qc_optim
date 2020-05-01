@@ -291,7 +291,35 @@ class Batch():
                                                nb_params = nb_params))
         return cost_list
     
-    
+
+class SafeString():
+    """ This class keeps track of previous random strings and guarantees that
+        the next random string has not been used before since the object was 
+        constructed\n
+        avoid_on_init: (default: None) a string, or list of strings that you want SafeString to avoud
+        ----
+        TODO: allow to decide, lower, upper, etc...
+        TODO: allow ability to seed sequence"""
+    def __init__(self, avoid_on_init = None):
+
+        if type(avoid_on_init) == NoneType:
+            self._previous_random_objects = []
+        elif type(avoid_on_init) == str:
+            self._previous_random_objects = [avoid_on_init]
+        elif type(avoid_on_init) == list:
+            self._previous_random_objects = avoid_on_init
+    def gen(self, nb_chars = 3):
+        """ Generate a guaranteed new random string for given length \n
+            nb_chars: (default: 3) length of string you want to gen"""
+        new_string = gen_random_str(nb_chars = nb_chars)
+        ct = 0
+        while new_string in self._previous_random_objects:
+            new_string = gen_random_str(nb_chars = nb_chars)
+            ct+=1
+        if ct>50:
+            print("Warning in SafeString: consider increasing length of requested string")
+        self._previous_random_objects.append(new_string)
+        return new_string
 
 # ------------------------------------------------------
 # BO related utilities
@@ -813,3 +841,7 @@ def get_TFIM_qubit_op(
     qubitOp = wpo(pauli_terms)
 
     return qubitOp
+
+
+
+safe_string = SafeString()
