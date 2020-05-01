@@ -154,25 +154,6 @@ class BayesianOptim(Optimiser):
             # get next evaluation from BO
             return self.BO._compute_next_evaluations()
 
-    def _get_random_points_in_domain(self,size=1):
-        """ 
-        Generate a requested number of random points distributed uniformly
-        over the domain of the BO parameters.
-        """
-        for idx,dirn in enumerate(self.bo_args['domain']):
-            assert int(dirn['name'])==idx, 'BO domain not being returned in correct order.'
-            assert dirn['type']=='continuous', 'BO domain is not continuous, this is not supported.'
-
-            dirn_min = dirn['domain'][0]
-            dirn_diff = dirn['domain'][1]-dirn_min
-            if idx==0:
-                rand_points = dirn_min + dirn_diff*np.array([np.random.random(size=size)]).T
-            else:
-                _next = dirn_min + dirn_diff*np.array([np.random.random(size=size)]).T
-                rand_points = np.hstack((rand_points,_next))
-
-        return rand_points
-
     def _bind_circuits(self,params_values):
         """
         Binds parameter values, getting the transpiled measurment circuits
@@ -269,59 +250,7 @@ class BayesianOptimParallel(Optimiser):
         # still needs initial data
         self._initialised = False
 
-    def _enforce_cost_objs_consistency(self,cost_objs):
-        """
-        Carry out some error checking on the Cost objs passed to the class
-        constructor. Fix small fixable errors and crash for bigger errors.
-        
-        Parameters
-        ----------
-        cost_objs : list of cost objs 
-            The cost objs passed to __init__
 
-        Returns
-        -------
-        new_cost_objs : list of cost objs
-            Possibly slightly altered list of cost objs
-        """
-
-        # TODO: Only makes sense to do this if the cost objs are based on 
-        # the WeightedPauliOps class. Should check that and skip otherwise
-
-        new_cost_objs = []
-        for idx,op in enumerate(cost_objs):
-
-            if idx>0:
-                assert op.num_qubits==num_qubits, ("Cost operators passed to"
-                    +" BOptParallel do not all have the same number of qubits.")
-
-                if not len(op.paulis)==len(test_pauli_set):
-                    # the new qubit op has a different number of Paulis than the previous
-                    new_pauli_set = set([ p[1] for p in op.paulis ])
-                    if len(op.paulis)>len(test_pauli_set):
-                        # the new operator set has more paulis the previous
-                        missing_paulis = list(new_pauli_set - test_pauli_set)
-                        paulis_to_add = [ [op.atol*10,p] for p in missing_paulis ]
-                        wpo_to_add = wpo(paulis_to_add)
-                        # iterate over previous qubit ops and add new paulis
-                        for prev_op in qubit_ops:
-                            prev_op.add(wpo_to_add)
-                        # save new reference pauli set
-                        test_pauli_set = new_pauli_set
-                    else:
-                        # the new operator set has less paulis than the previous
-                        missing_paulis = list(test_pauli_set - new_pauli_set)
-                        paulis_to_add = [ [op.atol*10,p] for p in missing_paulis ]
-                        wpo_to_add = wpo(paulis_to_add)
-                        # add new paulis to current qubit op
-                        op.add(wpo_to_add)
-            else:
-                test_pauli_set = set([ p[1] for p in op.paulis ])
-                num_qubits = op.num_qubits
-
-            new_cost_objs.append(op)
-
-        return new_cost_objs
 
 
 class ParallelOptimizer(Optimiser):
@@ -583,7 +512,8 @@ class ParallelOptimizer(Optimiser):
         for cst_idx,cst in enumerate(cost_list):
             meas_circuits = cst.meas_circuits
             qk_params = meas_circuits[0].parameters
-            points = 2*pi*np.random.rand(self.nb_init, len(qk_params))
+            # points = 2*pi*np.random.rand(self.nb_init, len(qk_params))
+            points = self._get_random_points_in_domain(size=self.nb_init)
             #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
             for pt_idx,pt in enumerate(points):
                 this_id = ut.gen_random_str(8)
@@ -593,6 +523,29 @@ class ParallelOptimizer(Optimiser):
                 self._parallel_id[cst_idx,pt_idx] = this_id
         self.circs_to_exec = circs_to_exec
         return circs_to_exec
+
+
+    def _get_random_points_in_domain(self,size=1):
+        """ 
+        Generate a requested number of random points distributed uniformly
+        over the domain of the BO parameters.
+        """
+        if type(self.optimizer_args) is list:
+            raise NotImplementedError
+
+        for idx,dirn in enumerate(self.bo_args['domain']):
+            assert int(dirn['name'])==idx, 'BO domain dims not being returned in correct order.'
+            assert dirn['type']=='continuous', 'BO domain is not continuous, this is not supported.'
+
+            dirn_min = dirn['domain'][0]
+            dirn_diff = dirn['domain'][1]-dirn_min
+            if idx==0:
+                rand_points = dirn_min + dirn_diff*np.array([np.random.random(size=size)]).T
+            else:
+                _next = dirn_min + dirn_diff*np.array([np.random.random(size=size)]).T
+                rand_points = np.hstack((rand_points,_next))
+
+        return rand_points
     
     
     def init_optimisers(self, results_obj): 
@@ -683,3 +636,56 @@ class ParallelOptimizer(Optimiser):
         for opt in self.optim_list:
             opt._update_model(opt.normalization_type)
 
+def check_cost_objs_consistency(cost_objs):
+    """
+    Carry out some error checking on the Cost objs passed to the class
+    constructor. Fix small fixable errors and crash for bigger errors.
+    
+    Parameters
+    ----------
+    cost_objs : list of cost objs 
+        The cost objs passed to __init__
+
+    Returns
+    -------
+    new_cost_objs : list of cost objs
+        Possibly slightly altered list of cost objs
+    """
+
+    # TODO: Only makes sense to do this if the cost objs are based on 
+    # the WeightedPauliOps class. Should check that and skip otherwise
+
+    new_cost_objs = []
+    for idx,op in enumerate(cost_objs):
+
+        if idx>0:
+            assert op.num_qubits==num_qubits, ("Cost operators passed to"
+                +" do not all have the same number of qubits.")
+
+            if not len(op.paulis)==len(test_pauli_set):
+                # the new qubit op has a different number of Paulis than the previous
+                new_pauli_set = set([ p[1] for p in op.paulis ])
+                if len(op.paulis)>len(test_pauli_set):
+                    # the new operator set has more paulis the previous
+                    missing_paulis = list(new_pauli_set - test_pauli_set)
+                    paulis_to_add = [ [op.atol*10,p] for p in missing_paulis ]
+                    wpo_to_add = wpo(paulis_to_add)
+                    # iterate over previous qubit ops and add new paulis
+                    for prev_op in qubit_ops:
+                        prev_op.add(wpo_to_add)
+                    # save new reference pauli set
+                    test_pauli_set = new_pauli_set
+                else:
+                    # the new operator set has less paulis than the previous
+                    missing_paulis = list(test_pauli_set - new_pauli_set)
+                    paulis_to_add = [ [op.atol*10,p] for p in missing_paulis ]
+                    wpo_to_add = wpo(paulis_to_add)
+                    # add new paulis to current qubit op
+                    op.add(wpo_to_add)
+        else:
+            test_pauli_set = set([ p[1] for p in op.paulis ])
+            num_qubits = op.num_qubits
+
+        new_cost_objs.append(op)
+
+    return new_cost_objs
