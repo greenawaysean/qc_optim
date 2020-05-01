@@ -28,8 +28,32 @@ Choice of noise_models, initial_layouts, nb_shots, etc.. is done through the
 quantum instance passed when initializing a Cost, i.e. it is outside of the
 scope of the classes here
 """
+
+# list of * contents
+__all__ = [
+    'CostInterface',
+    'Cost',
+    'compare_layout',
+    'GHZPauliCost',
+    'GHZWitness1Cost',
+    'GHZWitness2Cost',
+    'GraphCyclPauliCost',
+    'GraphCyclWitness1Cost',
+    'GraphCyclWitness2Cost',
+    'GraphCyclWitness2FullCost',
+    'GraphCyclWitness3Cost',
+    'freq_even',
+    'expected_parity',
+    'get_substring'
+    'append_measurements',
+    'gen_meas_circuits',
+    'bind_params',
+    'Batch',
+]
+
 import abc
 import pdb
+import sys
 import copy
 import numpy as np
 import qiskit as qk
@@ -42,7 +66,8 @@ pi =np.pi
 # Basic cost interface
 #======================#
 class CostInterface(metaclass=abc.ABCMeta):
-    """ Implements interface that can be used in batch processing"""
+    """ Impliments interface that can be used in batch processing"""
+
     @property
     @abc.abstractmethod
     def meas_circuits(self):
@@ -295,7 +320,6 @@ class Cost(CostInterface):
             circ = self._meas_circuits
         return circ
 
-
 def compare_layout(circ1, circ2):
     """ Draft, define a list of checks to compare transpiled circuits
         not clear what the rules should be (or what would be a better name)
@@ -304,7 +328,6 @@ def compare_layout(circ1, circ2):
     test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
     test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
     return test
-
 
 #======================#
 # Subclasses: one-qubit related costs
@@ -402,8 +425,6 @@ class GHZPauliCost(Cost):
             return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
         return meas_func
 
-
-
 class GHZWitness1Cost(Cost):
     """ Cost based on witnesses for genuine entanglement ([guhne2005])
     Stabilizer generators S_l of GHZ are (for n=4) S = <XXXX, ZZII, IZZI, IIZZ>
@@ -424,7 +445,6 @@ class GHZWitness1Cost(Cost):
             return 0.5*(S1-1) + np.prod((S2+1)/2)
         return meas_func
 
-
 class GHZWitness2Cost(Cost):
     """ Exactly as GHZWitness1Cost except that Cost =  Sum_l[S_l] - (N-1)I """   
     
@@ -443,7 +463,6 @@ class GHZWitness2Cost(Cost):
             return S1 + np.sum(S2) - (N -1)
         return meas_func
     
-
 #======================#
 # Subclasses: Graph states
 #======================#    
@@ -504,7 +523,6 @@ class GraphCyclPauliCost(Cost):
             return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
         return meas_func
 
-
 class GraphCyclWitness1Cost(Cost):
     """ Cost function based on the construction of witnesses for genuine 
     entanglement ([guhne2005])
@@ -541,7 +559,6 @@ class GraphCyclWitness1Cost(Cost):
                 return 0.5*(S_even[-1]-1) + np.prod((S_odd+1)/2) * np.prod((S_even[:-1]+1)/2) 
         return meas_func
 
-
 class GraphCyclWitness2Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that:
         Cost =  Sum_l[S_l] - (N-1)I """   
@@ -569,7 +586,6 @@ class GraphCyclWitness2Cost(Cost):
                 S_even = np.array([expected_parity(counts_even, indices=i) for i in ind_even])
                 return np.sum(S_odd) + np.sum(S_even) - (N-1)
         return meas_func
-
 
 class GraphCyclWitness2FullCost(Cost):
     """ Same cost function as GraphCyclWitness2Cost, except that the measurement
@@ -599,7 +615,6 @@ class GraphCyclWitness2FullCost(Cost):
             return np.sum(exp)  - (N-1)
         return meas_func
 
-
 class GraphCyclWitness3Cost(Cost):
     """ Exactly as GraphCyclWitness1Cost except that Cost =  XXX
     To implement"""   
@@ -624,7 +639,6 @@ class GraphCyclWitness3Cost(Cost):
             return np.sum(exp)  - (N-1)
         return meas_func
 
-
 # ------------------------------------------------------
 # Functions to compute expected values based on measurement outcomes counts as 
 # returned by qiskit
@@ -646,14 +660,12 @@ def freq_even(count_result, indices=None):
         nb_odd += v * (sub_k.count('1')%2)
     return nb_even / (nb_odd + nb_even)
 
-
 def expected_parity(results,indices=None):
     """ return the estimated value of the expectation of the parity operator:
     P = P+ - P- where P+(-) is the projector 
     Comment: Parity operator ircuit.quantumcircuit.QuantumCircuitircuit.quantumcircuit.QuantumCircuitmay nor be the right name
     """
     return 2 * freq_even(results, indices=indices) - 1
-
 
 def get_substring(string, list_indices=None):
     """ return a substring comprised of only the elements associated to the 
@@ -663,7 +675,6 @@ def get_substring(string, list_indices=None):
         return string
     else:
         return "".join([string[ind] for ind in list_indices])
-
 
 # ------------------------------------------------------
 # Some functions to deals with appending measurement and param bindings  
@@ -697,14 +708,12 @@ def append_measurements(circuit, measurements, logical_qubits=None):
             raise NotImplementedError('measurement basis {} not understood').format(basis)
     return circ
 
-
 def gen_meas_circuits(main_circuit, meas_settings, logical_qubits=None):
     """ Return a list of measurable circuit based on a main circuit and
     different settings"""
     c_list = [append_measurements(main_circuit.copy(), m, logical_qubits) 
                   for m in meas_settings] 
     return c_list
-
 
 def bind_params(circ, param_values, param_variables):
     """ Take a list of circuits with bindable parameters and bind the values 
@@ -717,11 +726,114 @@ def bind_params(circ, param_values, param_variables):
     bound_circ = [cc.bind_parameters(val_dict) for cc in circ]
     return bound_circ  
 
+#======================#
+# Cross-fidelity class
+#======================#
+
+class CrossFidelity(CostInterface):
+
+    def __init__(self,
+                 comparison_obj,
+                 ansatz,
+                 quantum_instance,
+                 seed=0,
+                 nb_random=5,
+                 prefix_string='Haar_Random'
+                 ):
+        """
+        """
+
+        # parse comparison object
+        if isinstance(comparison_obj,qk.QuantumCircuit):
+            # recieved a fixed quantum circuit
+            raise NotImplementedError
+        elif isinstance(comparison_obj,AnsatzInterface):
+            # recieved an ansatz object
+            raise NotImplementedError
+        elif type(comparison_obj) == dict:
+            # recieve a results dictionary
+            # could have checking here on the results dictionary
+            pass
+        else:
+            print("Type of comparison_obj not recognised. Please pass "
+                + "either a results dictionary or a QuantumCircuit.",
+                file=sys.stderr)
+            raise ValueError
+
+        # generate a numpy RandomState using the seed
+        self.rand_state = np.random.RandomState(seed=seed)
+
+        # store ansatz (add type checking here?)
+        self.ansatz = ansatz
+
+        # store quantum instance
+        self.quantum_instance = quantum_instance
+
+        # store other properties
+        self._nb_random = nb_random
+        self._prefix_string = prefix_string
+        self._seed = seed
+
+    def meas_circuits(self):
+        pass
+
+    def qk_vars(self):
+        pass
+
+    def evaluate_cost(self,results,name=None):
+        pass
+
+    def _append_random_unitaries_single_circ(self):
+        """ 
+        Creates a list of self._nb_random circuits with Haar random unitaries
+        """
+        
 
 
+        
+        circ_list = []
+        # Run over different numbers of circuits
+        for ii in range(nb_random):
+            # Fix circuit and set random seed (so each block has SAME unitaries)
+            this_circ = copy.deepcopy(circ)
+            this_circ.name = prefix + '_' +  str(ii) + '_' + this_circ.name
+            nb_qubits = this_circ.qregs[qregs_blocks[0]].size
+            seeds = np.random.randint(0, 2**32, nb_qubits)
+            for qregs_block in qregs_blocks:
+                this_circ = _random_measurement_helper(this_circ, 
+                                                       qregs_block=qregs_block, 
+                                                        seeds=seeds)
+            circ_list.append(this_circ)
+        return circ_list
 
 
-            
+    def _random_measurement_helper(circ, 
+                                   seeds, 
+                                   qregs_block=0):
+        """Appends (seeded) random unitaries for a circuit
+            - Will modify input circ if the input circ is passes as object
+            - Not made to be interacted with directly 
+            - Adds measurement registers with same name as qregs_block
+            - Assumes circuit construction is created with single /mutiple blocks"""
+        # get the registers to measure and add classical bits
+        qregs = circ.qregs[qregs_block]
+        nb_qubits = qregs.size
+        cbits = qk.ClassicalRegister(nb_qubits, 'cl_'+qregs.name)
+        circ.add_register(cbits)
+
+        
+        # generate Haar random (with known seeds)
+       # if type(seeds) is not list:
+       #     seeds = np.random.randint(0, 2**32, nb_qubits)
+        u_random = [qk.quantum_info.random_unitary(2, seed=seeds[ii]) 
+                    for ii in range(nb_qubits)]
+        
+        # append unitaries and measure to right classical registers
+        for ii in range(nb_qubits):
+            circ.append(u_random[ii], [qregs[ii]])
+        circ.measure(qregs, cbits)
+        return circ
+
         
 #%%
 # -------------------------------------------------------------- #

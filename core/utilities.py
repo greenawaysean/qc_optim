@@ -13,17 +13,50 @@ Miscellaneous utilities (may be split at some point):
 TODO: (FRED) Happy to deprecate add_path_GPyOpt/get_path_GPyOpt
     
 """
-from qiskit.providers.aer.noise import NoiseModel
-from qiskit.providers.aer import noise
-from qiskit.providers.aer.noise.errors import ReadoutError
-import qiskit as qk
-import numpy as np
-import os, socket, sys
-import copy
+# list of * contents
+__all__ = [
+    # Backend utilities
+    'BackendManager',
+    # BO related utilities
+    'add_path_GPyOpt',
+    'get_path_GPyOpt',
+    'get_best_from_bo',
+    'gen_res',
+    'gen_default_argsbo',
+    'gen_random_str',
+    'gen_ro_noisemodel',
+    'gen_pkl_file',
+    'gate_maps',
+    'Results',
+    # Chemistry utilities
+    'get_H2_data',
+    'get_H2_qubit_op',
+    'get_H2_shift',
+    'get_LiH_data',
+    'get_LiH_qubit_op',
+    'get_LiH_shift',
+    'get_TFIM_qubit_op',
+]
+
 import dill
 import string
 import random
+import copy
+import os, socket, sys
+
+import numpy as np
+import qiskit as qk
 import matplotlib.pyplot as plt
+
+# qiskit noise modules
+from qiskit.providers.aer.noise import NoiseModel
+from qiskit.providers.aer import noise
+from qiskit.providers.aer.noise.errors import ReadoutError
+# qiskit chemistry objects
+from qiskit.chemistry import FermionicOperator
+from qiskit.chemistry.drivers import PySCFDriver, UnitsType
+from qiskit.aqua.operators import Z2Symmetries
+
 NoneType = type(None)
 pi = np.pi
 
@@ -40,9 +73,6 @@ FREE_LIST_DEVICES = ['ibmq_16_melbourne',
                      'ibmq_london',
                      'ibmq_rome',
                      'qasm_simulator']
-
-
-
 
 # ------------------------------------------------------
 # Back end management related utilities
@@ -343,7 +373,6 @@ def gen_default_argsbo(f, domain, nb_init, eval_init=False, x_init=None):
 
     return default_args
 
-
 def gen_random_str(nb_chars = 5):
     """ Returns random string of arb length: inc lower, UPPER and digits"""
     choose_from = string.ascii_letters + string.digits
@@ -366,7 +395,6 @@ def gen_ro_noisemodel(err_proba = [[0.1, 0.1],[0.1,0.1]], qubits=[0,1]):
         err = [[1 - ro[0], ro[0]], [ro[1], 1 - ro[1]]]
         noise.add_readout_error(ReadoutError(err), [q])
     return noise_model
-
 
 # Save data from the cost fucntion and opt
 def gen_pkl_file(cost,
@@ -399,8 +427,6 @@ def gen_pkl_file(cost,
     with open(file_name, 'wb') as f:                                                                                                                                                                                                          
         dill.dump(dict_to_dill, f)                                                                                                                                                                                                            
 
-
-
 def gate_maps(arg):
     """ Stores usefull layouts for different devices"""
     gate_maps_di = {'SINGAPORE_GATE_MAP_CYC_6': [1,2,3,8,7,6], # Maybe put this in bem
@@ -416,8 +442,6 @@ def gate_maps(arg):
         return gate_maps_di.keys()
     else:
         return gate_maps_di[arg]
-
-
 
 class Results():
     import matplotlib.pyplot as plt
@@ -590,7 +614,7 @@ class Results():
         self.plot_param_trajectories()
         self.plot_circ()
  
-# These don't really need to be in the class, but thought I'd hid them here to reduce ut
+    # These don't really need to be in the class, but thought I'd hid them here to reduce ut
     def _diff_between_x(self, X_in):
         """ Computes the euclidian distance between adjacent X values
         + Might need to vectorize this in future"""
@@ -629,8 +653,6 @@ class Results():
                 temp_k = pree + key[ii]
                 
             print(temp_k + ':  ' + temp_v)
-
-
 
 # ------------------------------------------------------
 # Chemistry related helper functions
