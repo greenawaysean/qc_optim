@@ -41,6 +41,7 @@ __all__ = [
 import dill
 import string
 import random
+import copy
 import os, socket, sys
 
 import numpy as np

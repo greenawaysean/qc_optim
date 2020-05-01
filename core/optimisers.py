@@ -397,7 +397,7 @@ class ParallelOptimizer(Optimiser):
             return tuples
 
 
-    def _get_padding_circuits():
+    def _get_padding_circuits(self):
         """
         """
         def _find_min_dist(a,b):
@@ -424,7 +424,7 @@ class ParallelOptimizer(Optimiser):
                 
                 # generate random vector in N-d space then scale it to have length we want, 
                 # using 'Hypersphere Point Picking' Gaussian approach
-                random_displacement = np.random.normal(size=ansatz.nb_params)
+                random_displacement = np.random.normal(size=self.cost_objs[requester_idx].ansatz.nb_params)
                 random_displacement = random_displacement * dist/np.sqrt(np.sum(random_displacement**2))
                 # element-wise modulo 2\pi
                 new_pt = np.mod(generator_pt+random_displacement,2*np.pi)
@@ -461,6 +461,7 @@ class ParallelOptimizer(Optimiser):
         cost_obj = self.cost_objs[cst_eval_idx]
         x = self._parallel_x[cst_input_idx,result_idx]
         y = cost_obj.evaluate_cost(results_obj, name = circ_name)
+        #print(f'{cst_eval_idx}'+' '+f'{cst_input_idx}'+' '+f'{result_idx}'+':'+f'{circ_name}')
         return x, y
     
 
@@ -535,12 +536,22 @@ class ParallelOptimizer(Optimiser):
         circs_to_exec = circs_to_exec + self._get_padding_circuits()
 
         # sanity check on number of circuits generated
+        # BROKEN, needs to account for the number of measurement circuits 
+        # each cost function has
+        """
         if self.method in ['independent','shared']:
-            assert len(circs_to_exec)==len(self.cost_objs)
+            assert len(circs_to_exec)==len(self.cost_objs),('Should have '
+                +f'{len(self.cost_objs)}'+' circuits, but instead have '
+                +f'{len(circs_to_exec)}')
         elif self.method in ['random1','random2']:
-            assert len(circs_to_exec)==len(self.cost_objs)**2
+            assert len(circs_to_exec)==len(self.cost_objs)**2,('Should have '
+                +f'{len(self.cost_objs)**2}'+' circuits, but instead have '
+                +f'{len(circs_to_exec)}')
         elif self.method in ['left','right']:
-            assert len(circs_to_exec)==len(self.cost_objs)*(len(self.cost_objs)+1)//2
+            assert len(circs_to_exec)==len(self.cost_objs)*(len(self.cost_objs)+1)//2,('Should have '
+                +f'{len(self.cost_objs)*(len(self.cost_objs)+1)//2}'
+                +' circuits, but instead have '+f'{len(circs_to_exec)}')
+        """
 
         self.circs_to_exec = circs_to_exec
         return circs_to_exec
