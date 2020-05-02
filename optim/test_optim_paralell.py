@@ -26,9 +26,9 @@ pi= np.pi
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 100
-NB_ITER = 50
-CHOOSE_DEVICE = False
+NB_INIT = 85
+NB_ITER = 80
+CHOOSE_DEVICE = True
 
 
 # ===================
@@ -45,18 +45,39 @@ if CHOOSE_DEVICE:
     bem.get_backend(chosen_device, inplace=True)
 else:
     bem.get_backend(4, inplace=True)
-inst = bem.gen_instance_from_current()
+inst = bem.gen_instance_from_current(initial_layout=[1,3,2])
 
 # ===================
 # Generate ansatz and const functins (will generalize this in next update)
 # ===================
-anz0 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx0)
+anz0 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx0, x_sol = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.]))
 anz1 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx1)
 anz2 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx2)
+anz3 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx3)
+anz4 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx4)
 
-cst0 = cost.GHZPauliCost(anz0, inst)
-cst1 = cost.GHZPauliCost(anz1, inst)
-cst2 = cost.GHZPauliCost(anz2, inst)
+
+cst0 = cost.GHZWitness2Cost(anz0, inst)
+cst1 = cost.GHZWitness2Cost(anz1, inst)
+cst2 = cost.GHZWitness2Cost(anz2, inst)
+cst3 = cost.GHZWitness2Cost(anz3, inst)
+cst4 = cost.GHZWitness2Cost(anz4, inst)
+
+cost_list = [cst0, cst1, cst2, cst3, cst4]
+
+
+# c0 = cst0.meas_circuits[0]
+# c1 = cst1.meas_circuits[0]
+# c2 = cst2.meas_circuits[0]
+# c3 = cst3.meas_circuits[0]
+# c4 = cst4.meas_circuits[0]
+
+
+# c0.draw(idle_wires=False)
+# c1.draw(idle_wires=False)
+# c2.draw(idle_wires=False)
+# c3.draw(idle_wires=False)
+# c4.draw(idle_wires=False)
 
 # ======================== /
 #  Default BO args - consider passing this into an extension of Batch class
@@ -69,17 +90,17 @@ bo_args = ut.gen_default_argsbo(f=lambda x: 0.5,
 # ======================== /
 # Init optimiser class
 # ======================== /
-optim = op.ParallelOptimizer([cst0, cst1, cst2], 
-                             GPyOpt.methods.BayesianOptimization, 
-                             optimizer_args = bo_args,
-                             share_init = False,
-                             nb_init = NB_INIT,
-                             method = 'independent')
+optim = op.ParallelOptimizer(cost_list, 
+                              GPyOpt.methods.BayesianOptimization, 
+                              optimizer_args = bo_args,
+                              share_init = False,
+                              nb_init = NB_INIT,
+                              method = 'independent')
 
 
 
-# ========================= /
-# But it works:
+# # ========================= /
+# # But it works:
 # ========================= /
 Batch = ut.Batch(instance=inst)
 optim.gen_init_circuits()

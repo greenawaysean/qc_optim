@@ -2,9 +2,10 @@
 # list of * contents
 __all__ = [
     'Optimiser',
-    'BayesianOptim',
+    'ParallelOptimizer',
 ]
 
+import sys
 import numpy as np
 import utilities as ut
 import copy
@@ -173,7 +174,6 @@ class ParallelOptimizer(Optimiser):
                  method = 'shared',
                  share_init = True,
                  nb_init = 10,
-                 nb_optim = 10,
                  ): 
         """ 
         Parameters
@@ -242,7 +242,6 @@ class ParallelOptimizer(Optimiser):
         self.method = method
         self._share_init = share_init
         self.nb_init = nb_init
-        self.nb_optim = nb_optim
         
         # make internal assets
         self.optim_list = self._gen_optim_list()
@@ -403,7 +402,6 @@ class ParallelOptimizer(Optimiser):
         for cst_idx,cst in enumerate(cost_list):
             meas_circuits = cst.meas_circuits
             qk_params = meas_circuits[0].parameters
-            # points = 2*pi*np.random.rand(self.nb_init, len(qk_params))
             points = self._get_random_points_in_domain(size=self.nb_init)
             #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
             for pt_idx,pt in enumerate(points):
@@ -420,6 +418,7 @@ class ParallelOptimizer(Optimiser):
         """ 
         Generate a requested number of random points distributed uniformly
         over the domain of the BO parameters.
+        TODO: Deal with different optimizers having different domains?
         """
         if type(self.optimizer_args) is list:
             raise NotImplementedError
@@ -439,7 +438,7 @@ class ParallelOptimizer(Optimiser):
         return rand_points
     
     
-    def init_optimisers(self, results_obj): 
+    def init_optimisers(self, results_obj = None): 
         """ 
         Take results object to initalise the internal optimisers 
 
@@ -448,6 +447,8 @@ class ParallelOptimizer(Optimiser):
         results_obj : Qiskit results obj
             The experiment results to use
         """
+        if results_obj == None:
+            results_obj = self._last_results_obj
         self._last_results_obj= results_obj
         nb_optim = len(self.optim_list)
         nb_init = self.nb_init

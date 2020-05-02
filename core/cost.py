@@ -44,11 +44,10 @@ __all__ = [
     'GraphCyclWitness3Cost',
     'freq_even',
     'expected_parity',
-    'get_substring'
+    'get_substring',
     'append_measurements',
     'gen_meas_circuits',
     'bind_params',
-    'Batch',
 ]
 
 import abc
