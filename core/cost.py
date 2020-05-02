@@ -730,109 +730,202 @@ def bind_params(circ, param_values, param_variables):
 # Cross-fidelity class
 #======================#
 
-class CrossFidelity(CostInterface):
+# class CrossFidelity(CostInterface):
 
-    def __init__(self,
-                 comparison_obj,
-                 ansatz,
-                 quantum_instance,
-                 seed=0,
-                 nb_random=5,
-                 prefix_string='Haar_Random'
-                 ):
-        """
-        """
+#     def __init__(self,
+#                  ansatz,
+#                  quantum_instance,
+#                  comparison_results=None,
+#                  seed=0,
+#                  nb_random=5,
+#                  prefix_string='HaarRandom',
+#                  ):
+#         """
+#         """
 
-        # parse comparison object
-        if isinstance(comparison_obj,qk.QuantumCircuit):
-            # recieved a fixed quantum circuit
-            raise NotImplementedError
-        elif isinstance(comparison_obj,AnsatzInterface):
-            # recieved an ansatz object
-            raise NotImplementedError
-        elif type(comparison_obj) == dict:
-            # recieve a results dictionary
-            # could have checking here on the results dictionary
-            pass
-        else:
-            print("Type of comparison_obj not recognised. Please pass "
-                + "either a results dictionary or a QuantumCircuit.",
-                file=sys.stderr)
-            raise ValueError
+#         # parse comparison object
+#         # if isinstance(comparison_obj,qk.QuantumCircuit):
+#         #     # recieved a fixed quantum circuit
+#         #     raise NotImplementedError
+#         # elif isinstance(comparison_obj,AnsatzInterface):
+#         #     # recieved an ansatz object
+#         #     raise NotImplementedError
+#         # elif type(comparison_obj) == dict:
+#         #     # recieve a results dictionary
+#         #     # could have checking here on the results dictionary
+#         #     pass
+#         # else:
+#         #     print("Type of comparison_obj not recognised. Please pass "
+#         #         + "either a results dictionary or a QuantumCircuit.",
+#         #         file=sys.stderr)
+#         #     raise ValueError
 
-        # generate a numpy RandomState using the seed
-        self.rand_state = np.random.RandomState(seed=seed)
+#         # store inputs
+#         self.comparison_results = comparison_results
+#         if not type self.comparison_results is dict:
+#             self.comparison_results = self.comparison_results.to_dict()
+#         self.ansatz = ansatz
+#         self.quantum_instance = quantum_instance
 
-        # store ansatz (add type checking here?)
-        self.ansatz = ansatz
+#         # store hidden properties
+#         self._nb_random = nb_random
+#         self._prefix_string = prefix_string
+#         self._seed = seed
 
-        # store quantum instance
-        self.quantum_instance = quantum_instance
+#         # generate and store set of measurement circuits here
+#         self._meas_circuits = self._gen_random_measurements()
 
-        # store other properties
-        self._nb_random = nb_random
-        self._prefix_string = prefix_string
-        self._seed = seed
+#         # check if comparison_results contains the crossfidelity_metadata
+#         # tags and if it does compare them, else issue a warning
+#         try:
+#             comparison_metadata = comparison_results['crossfidelity_metadata']
+#             assert self._seed = comparison_results['seed']
+#             assert self._nb_random = comparison_results['nb_random']
+#             assert self._prefix_string = comparison_results['prefix_string']
+#         except KeyError:
+#             print('Warning, input results dictionary does not contain crossfidelity_metadata'
+#                 +' and so we cannot confirm that the results are compatible. If the input results'
+#                 +' object was collecting by this class consider using the tag_results_metadata'
+#                 +' method to add the crossfidelity_metadata.',file=sys.stderr)
+#         except AssertionError:
+#             print('Input results dictionary contains data that is incompatible with the arguments'
+#                 +' passed to CrossFidelity initializer.',file=sys.stderr)
+#             raise
 
-    def meas_circuits(self):
-        pass
-
-    def qk_vars(self):
-        pass
-
-    def evaluate_cost(self,results,name=None):
-        pass
-
-    def _append_random_unitaries_single_circ(self):
-        """ 
-        Creates a list of self._nb_random circuits with Haar random unitaries
-        """
+#     def _gen_random_measurements(self):
+#         """ 
+#         Creates a list of self._nb_random circuits with Haar random unitaries
+#         """
         
+#         # random state object used to generate random unitaries, using the
+#         # same seed means multiple calls to this function will produce the 
+#         # same set of random measurements
+#         rand_state = np.random.RandomState(seed=self.seed)
+
+#         circ_list = []
+#         for ii in range(nb_random):
+
+#             # make random measurment circuit
+#             rand_measurement = qk.QuantumCircuit(self.ansatz.nb_qubits)
+#             for i in range(self.ansatz.nb_qubits):
+#                 R = qk.quantum_info.random_unitary(2,seed=rand_state)
+#                 rand_measurement.append(R,[i])
+#             rand_measurement.measure_all()
+
+#             # append to ansatz circuit
+#             circ = self.ansatz.circuit + rand_measurement
+#             circ.name = self._prefix + '_' +  str(ii) + '_' + circ.name
+#             circ_list.append(circ)
+
+#         return circ_list
+
+#     def meas_circuits(self):
+#         """ """
+#         return self._meas_circuits
+
+#     def tag_results_metadata(self,results_obj):
+#         """
+#         """
+#         # convert results to dict
+#         results_dict = results_obj.to_dict()
+#         # add CrossFidelity metadata
+#         results_dict.update({
+#             'crossfidelity_metadata':{
+#                 'seed':self._seed
+#                 'nb_random':self._nb_random
+#                 'prefix_string':self._prefix_string
+#                 }
+#             })
+#         return results_dict
+
+#     def qk_vars(self):
+#         """ """
+#         return self.ansatz.params
+
+#     def evaluate_cost(self,results,name=None):
+#         """ """
+#         if self.comparison_results is None:
+#             print('No comparison results set has been passed to CrossFidelity obj.',
+#                 file=sys.stderr)
+#             raise ValueError
+
+#     def cross_fidelity(results_in,
+#                        prefix1 = STR_DEFAULT_PREFIX, 
+#                        prefix2 = STR_DEFAULT_PREFIX,
+#                        unitary_block1=None,
+#                        unitary_block2=None):
+#         """ Accepts as input results_in is a results object, a results.to_dict()
+#             or a list of EXACTLY two results objs in either format
+            
+#             TO DO: add ability to pass miltiple blocks in 
+#             TO DO: add ability to pass list of measurement outcomes for spesific unitary"""
+#         results1, results2 = _gen_results_to_compare(results_in,                   
+#                                                      prefix1 = prefix1, 
+#                                                      prefix2 = prefix2,
+#                                                      unitary_block1=unitary_block1,
+#                                                      unitary_block2=unitary_block2)    
+#         cross_overlap = density_matrix_overlap(results1, results2)
+#         first_overlap = density_matrix_overlap(results1, results1)
+#         secon_overlap = density_matrix_overlap(results2, results2)
+#         F = cross_overlap / max(first_overlap, secon_overlap)
+#         return F
 
 
+#     def density_matrix_overlap(results1, results2): # d=2 for qubit, 3 for qutrit
+#         """Impliments Eq. 2 from Cross-Platform Verification of Intermediate Scale 
+#             Quantum Devices
+#             Basic checks at the beginning to ensure inputs are valid (not exhaustive)
+#             Assumes inputs are LISTS OF DICTIONARIES
+#             """
+#         # very basic checks on inputs
+#         nb_qubits1 = len(list(results1[0].keys())[0])
+#         nb_qubits2 = len(list(results2[0].keys())[0])
+#         nb_u1 = len(results1)
+#         nb_u2 = len(results2)
+#         if nb_qubits1 == nb_qubits2 and nb_u1 == nb_u2:
+#             nb_qubits = nb_qubits1
+#         else:
+#             assert False, 'Error - results dont match dims for this method'
         
-        circ_list = []
-        # Run over different numbers of circuits
-        for ii in range(nb_random):
-            # Fix circuit and set random seed (so each block has SAME unitaries)
-            this_circ = copy.deepcopy(circ)
-            this_circ.name = prefix + '_' +  str(ii) + '_' + this_circ.name
-            nb_qubits = this_circ.qregs[qregs_blocks[0]].size
-            seeds = np.random.randint(0, 2**32, nb_qubits)
-            for qregs_block in qregs_blocks:
-                this_circ = _random_measurement_helper(this_circ, 
-                                                       qregs_block=qregs_block, 
-                                                        seeds=seeds)
-            circ_list.append(this_circ)
-        return circ_list
-
-
-    def _random_measurement_helper(circ, 
-                                   seeds, 
-                                   qregs_block=0):
-        """Appends (seeded) random unitaries for a circuit
-            - Will modify input circ if the input circ is passes as object
-            - Not made to be interacted with directly 
-            - Adds measurement registers with same name as qregs_block
-            - Assumes circuit construction is created with single /mutiple blocks"""
-        # get the registers to measure and add classical bits
-        qregs = circ.qregs[qregs_block]
-        nb_qubits = qregs.size
-        cbits = qk.ClassicalRegister(nb_qubits, 'cl_'+qregs.name)
-        circ.add_register(cbits)
-
+#         # Generae all possible keys may, or may not have measurement realisation
+#         keys1 = _gen_keys_from_lists(results1)
+#         keys2 = _gen_keys_from_lists(results2)
+#         keys = list(set.intersection(keys1, keys2))
+#         nb_hilbert_dims = NB_QUBITS_HAVE_DIM_2**nb_qubits
         
-        # generate Haar random (with known seeds)
-       # if type(seeds) is not list:
-       #     seeds = np.random.randint(0, 2**32, nb_qubits)
-        u_random = [qk.quantum_info.random_unitary(2, seed=seeds[ii]) 
-                    for ii in range(nb_qubits)]
+#         # Double sum in Eq. 2, coefficient times cross corrslation paper
+#         Trace = 0
+#         for k1 in keys:
+#             for k2 in keys: 
+#                 hamming_distance = int(nb_qubits*sp.spatial.distance.hamming(list(k1), list(k2)))
+#                 coeff = nb_hilbert_dims * (-NB_QUBITS_HAVE_DIM_2)**(-hamming_distance)
+#                 Trace += coeff * _correlation(results1, results2, k1, k2)
+                
+#         return Trace
+
+
+#     def _correlation(results1, results2, key1, key2):
+#         """Computs the corelation between at two measurement outcomes, assumes all inputs
+#             all contribute to correlation"""
+#         # get number of random U matricies
+#         if type(results1) != list: results1 = _gen_measurement_list(results1)
+#         if type(results2) != list: results2 = _gen_measurement_list(results2)
+
+#         nb_u = len(results1)
+#         correlation = 0
+#         for ii in range(nb_u): # for each unitary
+            
+#             # Get counts and keys, and number of shots (robust to key errors)
+#             keys1 = list(results1[ii].keys())
+#             keys2 = list(results2[ii].keys())
+#             norm = sum(results1[ii].values()) *  sum(results2[ii].values())
+#             # basic error handeling if not all measurements are realized
+#             if key1 in keys1 and key2 in keys2: 
+#                 correlation += results1[ii][key1] *results2[ii][key2]
         
-        # append unitaries and measure to right classical registers
-        for ii in range(nb_qubits):
-            circ.append(u_random[ii], [qregs[ii]])
-        circ.measure(qregs, cbits)
-        return circ
+#         # Normalize ensemble mean to number of input shots, and number of unitariess
+#         correlation = correlation / nb_u / norm
+#         return correlation
 
         
 #%%
