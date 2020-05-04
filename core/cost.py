@@ -808,7 +808,14 @@ class CrossFidelity(CostInterface):
 
     def _gen_random_measurements(self):
         """ 
-        Creates a list of self._nb_random circuits with Haar random unitaries
+        Creates a list of self._nb_random circuits with Haar random 
+        unitaries appended to measure in random basis for each qubit
+
+        Returns
+        -------
+            quantum circuits
+                The unbound and untranspiled circuits to carry out 
+                different random measurements on each qubit
         """
         
         # random state object used to generate random unitaries, using the
@@ -864,6 +871,11 @@ class CrossFidelity(CostInterface):
         ----------
         results : Qiskit results type, or dict
             The results data to process
+
+        Returns
+        -------
+        results : dict
+            Results dictionary with the CrossFidelity metadata added
         """
         # convert results to dict if needed
         if not type(results) is dict:
@@ -893,7 +905,13 @@ class CrossFidelity(CostInterface):
         Parameters
         ----------
         results : Qiskit results type
+            Results to calculate cross-fidelity with, against the stored
+            results dictionary.
 
+        Returns
+        -------
+        cross_fidelity : float
+            Evaluated cross-fidelity
         """
 
         # we make it possible to instance a CrossFidelity obj without a
@@ -964,6 +982,11 @@ class CrossFidelity(CostInterface):
             possible binary strings in the computational basis
         P_2 : dict (normalised counts dictionary)
             Same for qubit 2.
+
+        Return
+        ------
+        correlation_fixed_U : float
+            Evaluation of the inner sum of the cross-fidelity
         """
         # iterate over the elements of the computational basis (that 
         # appear in the measurement results)
