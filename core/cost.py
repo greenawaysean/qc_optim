@@ -833,11 +833,27 @@ class CrossFidelity(CostInterface):
 
         return circ_list
 
-    def meas_circuits(self):
+    def meas_circuits(self,*args):
         """ 
-        Return the (transpiled but not bound) measurement circuits
+        Return the measurement circuits, optionally bound
+
+        Parameters
+        ----------
+        args : empty, or numpy array
+            If it is empty the function will return the unbound 
+            measurement circuit, else it will assume that the object
+            passed, args[0], is a numpy array of param values that will
+            be bound and the bound circs will be returned
+
+        Returns
+        -------
+            quantum circuits
+                The bound or unbound measurment circuits
         """
-        return self._meas_circuits
+        if len(args)==0:
+            return self._meas_circuits
+        else:
+            return bind_params(self._meas_circuits,args[0],self.ansatz.params)
 
     def tag_results_metadata(self,results):
         """
