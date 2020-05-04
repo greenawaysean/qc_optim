@@ -50,18 +50,19 @@ inst = bem.gen_instance_from_current(initial_layout=[1,3,2])
 # ===================
 # Generate ansatz and const functins (will generalize this in next update)
 # ===================
-anz0 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx0, x_sol = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.]))
+x_sol = np.pi/2 * np.array([1.,1.,2.,1.,1.,1.])
+anz0 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx0, x_sol = x_sol)
 anz1 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx1)
 anz2 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx2)
 anz3 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx3)
 anz4 = az.AnsatzFromFunction(az._GHZ_3qubits_6_params_cx4)
 
 
-cst0 = cost.GHZWitness2Cost(anz0, inst)
-cst1 = cost.GHZWitness2Cost(anz1, inst)
-cst2 = cost.GHZWitness2Cost(anz2, inst)
-cst3 = cost.GHZWitness2Cost(anz3, inst)
-cst4 = cost.GHZWitness2Cost(anz4, inst)
+cst0 = cost.GHZPauliCost(anz0, inst)
+cst1 = cost.GHZPauliCost(anz1, inst)
+cst2 = cost.GHZPauliCost(anz2, inst)
+cst3 = cost.GHZPauliCost(anz3, inst)
+cst4 = cost.GHZPauliCost(anz4, inst)
 
 cost_list = [cst0, cst1, cst2, cst3, cst4]
 
@@ -90,14 +91,16 @@ bo_args = ut.gen_default_argsbo(f=lambda x: 0.5,
 # ======================== /
 # Init optimiser class
 # ======================== /
-optim = op.ParallelOptimizer(cost_list, 
+
+optim = op.ParallelOptimizer(cost_list[:2], 
                               GPyOpt.methods.BayesianOptimization, 
                               optimizer_args = bo_args,
                               share_init = False,
-                              nb_init = NB_INIT,
+                              nb_init = 0,
                               method = 'independent')
 
-
+par = [[x_sol,x_sol], [x_sol/2]]
+optim._gen_circuits_from_params(par)
 
 # # ========================= /
 # # But it works:

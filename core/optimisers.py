@@ -39,6 +39,50 @@ class Optimiser(ABC):
         return self._prefix
 
 
+class OptimiserBO(Optimiser):
+    """
+    Creates a warapper around GPyOpt.methods.BayesianOptimization """
+    
+    def __init__(self, optimiser):
+        """
+        Creates a warapper around GPyOpt.methods.BayesianOptimization to be used
+        in ParallelOptimiser. 
+        TODO: Better input checks? 
+        
+        Parameters
+        ----------
+        optimiser: Must be an instance of 
+        """
+        if str(optimiser.__class__) != "<class 'type'>" or not hasattr(optimiser, 'mro'):
+            raise TypeError
+        raise Warning('This is experimental for now, only an example')
+        self.optimiser = optimiser
+        self._prefix = ut.safe_string.gen(3)
+    
+    def next_evaluation_circuits(self):
+        """
+        Really only returns the next evaluation points requested by this optimiser
+        TODO: RENAME
+        """
+        x_new = np.atleast_2d(np.squeeze(self.optimiser._compute_next_evaluations()))
+        raise Warning('Currenty does not give format requried by _gen_circs_from_param')
+        return x_new
+    
+    def update(self, x_new, y_new):
+        """
+        Updates the interal state of the optimiser with the data provided
+        
+        Parametres:
+        -------------
+        x_new: Parameter points that were requested/provided
+        
+        y_new: Cost functino evalutations for those parameter points
+        """
+        self.optimiser.X = np.vstack((self.optimiser.X, x_new))
+        self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
+        self.optimiser._update_model(self.optimiser.normalization_type)
+        
+
 
 class SPSA(Optimiser):
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
@@ -145,7 +189,7 @@ class SPSA(Optimiser):
         return self.x[-1]
         
 
-class ParallelOptimizer(Optimiser):
+class ParallelOptimizer():
     """ 
     Class that wraps a set of quantum optimisation tasks. It separates 
     out the cost function evaluation requests from the updating of the 
@@ -250,10 +294,14 @@ class ParallelOptimizer(Optimiser):
         self._parallel_x = {}
         self._parallel_id = {}
         self._last_results_obj = None
-        
+        self._last_x_new = None
         # unused currently
         self._initialised = False
-    
+
+    @property    
+    def prefix(self):
+        return self._prefix
+
     
     def _gen_optim_list(self):
         """ 
@@ -389,6 +437,50 @@ class ParallelOptimizer(Optimiser):
         #print(f'{cst_eval_idx}'+' '+f'{optim_requester_idx}'+' '+f'{point_idx}'+':'+f'{circ_name}')
         return x, y
     
+
+    def _gen_circuits_from_params(self, x_new):
+        """
+        Creates measurement circuits from supplied parameter points, assumes input 
+        is of the form x_new = [[p11,p12...], [p21, p22.,,], ...] where pij is the 
+        j'th parameter point requested bit circuit i. Input structure need not be square
+        
+        TODO: Use this elsewhere in the class? 
+        
+        Parameters:
+        ---------------
+        x_new: Nested list of parameter points assumed at least 3d, need not be square
+        """
+        circs_to_exec = []
+        cost_list = self.cost_objs
+        self._last_x_new = x_new
+        for cst_idx,cst in enumerate(cost_list):
+            meas_circuits = cst.meas_circuits
+            qk_params = meas_circuits[0].parameters
+            points = x_new[cst_idx]
+            for pt_idx,pt in enumerate(points):
+                this_id = ut.gen_random_str(8)
+                named_circs = ut.prefix_to_names(meas_circuits, this_id)
+                circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
+                self._parallel_x[cst_idx,pt_idx] = pt
+                self._parallel_id[cst_idx,pt_idx] = this_id
+        self.circs_to_exec = circs_to_exec
+        return circs_to_exec
+
+
+    def _results_from_last_x(self):
+        """
+        If spesific points were requested, then this returns an array of the same 
+        dimentions. WARNING THIS IGNORES ALL CROSS SHARING    
+        """
+        results = []
+        for cst_idx,cst in enumerate(self.cost_objs):
+            sub_results = []
+            for pt in range(len(self._last_x_new[cst_idx])):
+                sub_results.append(self._cross_evaluation(cst_idx,cst_idx,pt)[1])
+            results.append(sub_results)
+        return results
+            
+
 
     def gen_init_circuits(self):
         """ 
