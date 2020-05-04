@@ -735,7 +735,10 @@ def bind_params(circ, param_values, param_variables):
 #======================#
 
 class CrossFidelity(CostInterface):
-
+    """
+    Cost class to implement offline CrossFidelity measurements between 
+    two quantum states (arxiv:1909.01282)
+    """
     def __init__(self,
                  ansatz,
                  quantum_instance,
@@ -745,6 +748,27 @@ class CrossFidelity(CostInterface):
                  prefix='HaarRandom',
                  ):
         """
+        Parameters
+        ----------
+        ansatz : object implementing AnsatzInterface
+            The ansatz object that this cost can be optimsed over
+        quantum_instance : qiskit quantum instance
+            Will be used to generate internal transpiled circuits
+        comparison_results : {dict, None}
+            The use cases where None would be passed is if we are using
+            this object to generate the comparison_results object for a
+            future instance of CrossFidelity. This robustly ensures that
+            the results objs to compare are compatible.
+            If dict is passed it should be a qiskit results object that
+            has been converted to a dict using its `to_dict` method. 
+            Ideally this would have been tagged with CrossFidelity 
+            metadata using this classes `tag_results_metadata` method.
+        seed : int, optional
+            Seed used to generate random unitaries
+        nb_random : int, optional
+            The number of random unitaries to average over
+        prefix : string, optional
+            String to use to label the measurement circuits generated
         """
 
         # store inputs
@@ -810,30 +834,51 @@ class CrossFidelity(CostInterface):
         return circ_list
 
     def meas_circuits(self):
-        """ """
+        """ 
+        Return the (transpiled but not bound) measurement circuits
+        """
         return self._meas_circuits
 
-    def tag_results_metadata(self,results_obj):
+    def tag_results_metadata(self,results):
         """
+        Adds in CrossFidelity metadata to a results object. This can be
+        used to ensure that two results sets are compatible.
+
+        Parameters
+        ----------
+        results : Qiskit results type, or dict
+            The results data to process
         """
-        # convert results to dict
-        results_dict = results_obj.to_dict()
+        # convert results to dict if needed
+        if not type(results) is dict:
+            results = results.to_dict()
         # add CrossFidelity metadata
-        results_dict.update({
+        results.update({
             'crossfidelity_metadata':{
                 'seed':self._seed,
                 'nb_random':self._nb_random,
                 'prefix':self._prefix,
                 }
             })
-        return results_dict
+        return results
 
     def qk_vars(self):
-        """ """
+        """ 
+        Access the ansatz parameter objects
+        """
         return self.ansatz.params
 
-    def evaluate_cost(self,results,name=None):
-        """ """
+    def evaluate_cost(self,results):
+        """ 
+        Calculates the cross-fidelity using two sets of qiskit results. 
+        The variable names are chosen to match arxiv:1909.01282 as close
+        as possible.
+
+        Parameters
+        ----------
+        results : Qiskit results type
+
+        """
 
         # we make it possible to instance a CrossFidelity obj without a
         # comparison_results dict so that we can easily generate the 
@@ -888,8 +933,22 @@ class CrossFidelity(CostInterface):
 
     @staticmethod
     def correlation_fixed_U(P_1,P_2):
-        """ """
+        """ 
+        Carries out the inner loop calculation of the Cross-Fidelity. In
+        contrast to the paper, arxiv:1909.01282, it makes sense for us to
+        make the sum over sA and sA' the inner loop. So this computes the
+        sum over sA and sA' for fixed random U.
 
+        Parameters
+        ----------
+        P_1 : dict (normalised counts dictionary)
+            The empirical distribution for the measurments on qubit 1
+            P^{(1)}_U(s_A) = Tr[ U_A \rho_1 U^\dagger_A |s_A\rangle \langle s_A| ]
+            where U is a fixed, randomly chosen unitary, and s_A is all 
+            possible binary strings in the computational basis
+        P_2 : dict (normalised counts dictionary)
+            Same for qubit 2.
+        """
         # iterate over the elements of the computational basis (that 
         # appear in the measurement results)
         correlation_fixed_U = 0
