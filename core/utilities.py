@@ -231,6 +231,8 @@ class Batch():
                 relevant_results.append(experiment)
         results_di['results'] = relevant_results
         results_obj = qk.result.result.Result.from_dict(results_di)
+        if type(obj_in) != str:
+            obj_in._last_results_obj = results_obj
         return results_obj
      
     def _batch_create(self, gate_map, ansatz, cost_function, 

@@ -99,8 +99,14 @@ optim = op.ParallelOptimizer(cost_list[:2],
                               nb_init = 0,
                               method = 'independent')
 
-par = [[x_sol,x_sol], [x_sol/2]]
+par = [[x_sol,x_sol/2], [x_sol]]
+
+Batch = ut.Batch(instance=inst)
 optim._gen_circuits_from_params(par)
+Batch.submit(optim)
+Batch.execute()
+optim._last_results_obj = Batch.result(optim)
+optim._results_from_last_x()
 
 # # ========================= /
 # # But it works:

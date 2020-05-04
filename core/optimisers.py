@@ -455,7 +455,8 @@ class ParallelOptimizer():
         self._last_x_new = x_new
         for cst_idx,cst in enumerate(cost_list):
             meas_circuits = cst.meas_circuits
-            qk_params = meas_circuits[0].parameters
+            qk_params = cst.ansatz.params
+            print(qk_params)
             points = x_new[cst_idx]
             for pt_idx,pt in enumerate(points):
                 this_id = ut.gen_random_str(8)
@@ -469,7 +470,7 @@ class ParallelOptimizer():
 
     def _results_from_last_x(self):
         """
-        If spesific points were requested, then this returns an array of the same 
+        If specific points were requested, then this returns an array of the same 
         dimentions. WARNING THIS IGNORES ALL CROSS SHARING    
         """
         results = []
