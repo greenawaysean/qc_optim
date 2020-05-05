@@ -4,16 +4,14 @@
 Created on Tue Feb 25 18:11:28 2020
 
 @author: fred
-TODO: (SOON) Better implement the measurements
-TODO: (VERYSOON) Move bind_parameters to utils as it's used in optimisers
+
+TODO: (MAYBENOT) Move bind_parameters to utils as it's used in optimisers
+TODO: (SOON) Reimplement the max_circuit rule
 TODO: (SOON) implement more general graph states 
 TODO: (SOON) PROBLEM WITH WitnessesCost1 SHOULD NOT BE USED
-DONE: See new class - Batch Concatenated Cost Functions
 TODO: (LATER) ability to deal with different number of shots 
 TODO: (LATER) implement sampling (of the measurement settings) strategy
 
-TODO: (FRED) Remove noise_model as it should be defined in the init of the instance
-TODO: (FRED) Reimplement the max_circuit rule
 
 
 CHANGES
@@ -70,7 +68,7 @@ pi =np.pi
 # Basic cost interface
 #======================#
 class CostInterface(metaclass=abc.ABCMeta):
-    """ Impliments interface that can be used in batch processing"""
+    """ Implements interface that can be used in batch processing"""
 
     @property
     @abc.abstractmethod
@@ -88,11 +86,37 @@ class CostInterface(metaclass=abc.ABCMeta):
     def evaluate_cost(self, results : qk.result.result.Result, 
                       name = None):
         """ Returns the result of the cost function from a qk results object, 
-            optional to spesify a name to give the results list
+            optional to specify a name to give the results list
             TODO: extend to allow list of names"""
         raise NotImplementedError
     
-   
+    def bind_params_to_meas(self, params = None, params_names = None):
+        """ Bind a list of parameters to named measurable circuits of the cost function 
+        Parameters
+        ----------
+        params : None, or 1d, 2d numpy array (if 1d becomes 2d from np.atleast_2d)
+            If None the function will return the unbound measurement circuit, 
+            else it will bind each parameter to each of the measurable circuits
+        params_names: if None nothing new happen (i.e. all circuits are named as self.name)
+                      if not None it will prepend the params_names passedto the respective circuits, 
+
+        Returns
+        -------
+            quantum circuits
+                The bound or unbound named measurement circuits
+        """
+        if params is None:
+            bound_circuits = self._meas_circuits()
+        else:
+            params = np.atleast_2d(params)
+            if params_names is None: 
+                params_names = [None] * len(params)
+            else:
+                assert len(params_names) == len(params)
+            bound_circuits = []
+            for p, pn in zip(params, params_names):
+                bound_circuits += bind_params(self._meas_circuits, p, self._qk_vars, pn)
+        return bound_circuits   
 
 #======================#
 # Base class
@@ -101,12 +125,12 @@ class Cost(CostInterface):
     """
     This base class defines all the ingredients necessary to evaluate a cost 
     function based on an ansatz circuit:
-        + what should be measured and how many times
-        + how the measurements outcomes(counts) should be aggregated to return 
-          an estimate of the cost
         + how should be the full(ansatz+measurements) circuit generated and 
           transpiled
-        
+        + what should be measured
+        + how the measurements outcomes(counts) should be aggregated to return 
+          an estimate of the cost
+
     Logic of computing the cost are defined by the followings (which are not
     implemented in the base class but should be implemented in the subclasses):
         + self._list_meas is a list of M strings indicating all the measurement 
@@ -114,44 +138,36 @@ class Cost(CostInterface):
         + self._meas_func is a single function taking as an input the list of 
             the M outputs from the execution of the circuits (counts dictionaries) 
             and returning a single value
-    
-    Other bits of logic have been included:
-        + transpile
-          ++ if False the circuit is only transpiled once. Then 
-             in this case 'args' should contain 
-          ++if True the circuit is transpiled at each call of the function
-        + keep_res 
-          ++ if True the results from the execution of the circuits are kept 
-             (appended) in self._res
-        + shot_noise
-          ++ added to see shot noise to better estimate difference in results (maybe this is overkill)
-          
-    Bits removed:
-        - No longer accepts pretranspiled circuits, ansatz must now be class and
-            dealing with pre-transpiling should happen there. 
 
     Terminology:
-        + ansatz: Object of ansatz class that has all needed properties, some 
+        + ansatz: Object of ansatz class that has all needed properties
         + circuit: quantum circuit 
-        + qk_vars qiskit.parameter objects
         + measurable circuit: circuit with measurement operations
+        + qk_vars qiskit.parameter objects
         
     """
     def __init__(self, ansatz, instance, 
                  fix_transpile = True, # maybe redundent now
                   keep_res = False, 
                   verbose = True, 
-                  noise_model = None,
                   debug = False, 
                   error_correction = False,
                   name = None, **args):
-        """ initialize the cost function taking as input parameters:
-            + ansatz : Ansatz object
-            + instance: (QuantumInstance)
-            + keep_res
-            + 
+        """  
+        Parameters
+        ----------
+            ansatz : Ansatz object 
+            instance : qiskit quantum instance
+            fix_transpile : boolean if True circuits are only transpiled once
+            keep_res : boolean systematically keep the Results Object from execution
+            verbose : boolean print some results
+            debug: boolean allows to enter debug mode
+            error_correction: not implemented yet
+            name : str or None name of the circuit if None it is randomly generated
         """
         if debug: pdb.set_trace()
+        if name is None:
+            name = 'circuit_' + ut.gen_random_str(5)
         self.name = name
         self.ansatz = ansatz
         self.instance = instance
@@ -180,29 +196,37 @@ class Cost(CostInterface):
             raise NotImplementedError
     
     def __call__(self, params, debug=False):
-        """ Estimate the CostFunction for some parameters - Has a known buy:
-            if number of measurement settings > max_job_size """
+        """ Estimate the CostFunction for some parameters
+        Has a known bug: if number of measurement settings > max_job_size  
+        Parameters
+        ----------
+        params :either 1d, 2d of numpy array (if 1d becomes 2d from np.atleast_2d)
+        debug: boolean allows to enter debug mode
+
+        Returns
+        -------
+            res: 2d array 
+        """
         if debug: pdb.set_trace()
-        # reshape the inputs
-        params_reshaped = np.atleast_2d(params)
-        nb_meas = len(self._list_meas) #number of meas taken per set of parameters
-        nb_params = len(params_reshaped) #number of different parameters
-        
+        params = np.atleast_2d(params)
+        name_params = ['x' + str(i) for i in range(len(params))]
+
         # List of all the circuits to be ran
-        bound_circs = []
-        for p in params_reshaped:
-            bound_circs += bind_params(self._meas_circuits, p, self._qk_vars)
+        bound_circs = self.bind_params_to_meas(params, name_params)
+
+        # Execute them
         results = self.instance.execute(bound_circs, 
-                                        had_transpiled=self.fix_transpile)         
-        counts = [results.get_counts(i) for i in range(len(bound_circs))]
-        counts = np.reshape(counts, newshape=[nb_params, nb_meas])
-        
-        # reshape the output
-        res = np.array([self._meas_func(c) for c in counts]) 
+                                        had_transpiled=self.fix_transpile)  
+        if self._keep_res:
+            self._res.append(results)
+        # Evaluate cost functions based on results
+        res = np.array(self.evaluate_cost(results, name = name_params))
+            
         if np.ndim(res) == 1: 
             res = res[:,np.newaxis]
         if self.verbose: print(res)
         return res 
+
 
     def _gen_qk_vars(self):
         raise NotImplementedError("This function is now in the Ansatz class")        
@@ -220,9 +244,7 @@ class Cost(CostInterface):
         raise NotImplementedError()
     
     def _label_circuits(self):
-        """ Gives (random name) to all circuits to they can be identified in the results obj"""
-        if self.name == None:
-            self.name = 'circuit_' + ut.gen_random_str(5)
+        """ Give names to all circuits to they can be identified in the results obj"""
         self.main_circuit.name = self.name
         for c in self._meas_circuits:
             c.name = self.name
@@ -239,10 +261,32 @@ class Cost(CostInterface):
         return self._qk_vars
     
     def evaluate_cost(self, results_obj, name = None):
-        """ Returns cost value from results object/count list"""
-        count_list = []
+        """ Returns cost value from a qiskit result object
+        ----------
+        results_obj : None, or 1d, 2d numpy array (if 1d becomes 2d from np.atleast_2d)
+            If None the function will return the unbound measurement circuit, 
+            else it will bind each parameter to each of the measurable circuits
+        name: if None it will use self.name instead
+              if str it will filter the result obj with a matching name (i.e. name is included) 
+              if list<str> same behavior but for each element of the list
+
+        Returns
+        -------
+            cost: scalar-like value if name is None or string
+                  list of costs
+        Assume the right ordering in results_obj
+        """
         if name == None:
             name = self.name
+        if type(name) is str:
+            res = self._evaluate_cost_one_name(results_obj, name)
+        else:
+            res = [self._evaluate_cost_one_name(results_obj, n) for n in name]
+        return res
+
+    def _evaluate_cost_one_name(self, results_obj, name):
+        """ same as above except it takes as input a single name"""
+        count_list = []
         for ii in range(len(results_obj.results)):
             if name in results_obj.results[ii].header.name:
                 count_list.append(results_obj.get_counts(ii))
@@ -253,6 +297,8 @@ class Cost(CostInterface):
         params = [params for ii in range(nb_experiments)]
         return self.__call__(params)
     
+
+    # Comparison/informations about the circuits
     def check_layout(self):
         """ Draft, check if all the meas_circuit have the same layout
         TODO: remove except if really needed
@@ -353,8 +399,8 @@ class OneQXYZ(Cost):
     """ Fidelity w.r.t. to a 1qubit target state specified in terms of its 
     decomposition in the Pauli basis"""   
     def __init__(self, ansatz, instance, coeffs = None, decompose = False, 
-        fix_transpile = True, keep_res = True, verbose = True, noise_model = None, 
-        debug = False, error_correction = False):
+        fix_transpile = True, keep_res = True, verbose = True, debug = False, 
+        error_correction = False):
         """ 
         coeffs: list of size 3 with elements [a_x = <X>tgt, a_y = <Y>tgt, a_z = <Z>tgt] 
                 s.t psi_tgt =  1/2 (a_x X + a_y Y +a_z Z)
@@ -369,7 +415,7 @@ class OneQXYZ(Cost):
         self.coeffs = coeffs
         self.decompose = decompose
         super(OneQXYZ, self).__init__(ansatz,  instance, fix_transpile, keep_res, 
-                            verbose, noise_model, debug, error_correction)
+                            verbose, debug, error_correction)
 
     def _gen_list_meas(self):
         """ 3 measurement settings"""
@@ -719,15 +765,30 @@ def gen_meas_circuits(main_circuit, meas_settings, logical_qubits=None):
                   for m in meas_settings] 
     return c_list
 
-def bind_params(circ, param_values, param_variables):
+def bind_params(circ, param_values, param_variables, param_name = None):
     """ Take a list of circuits with bindable parameters and bind the values 
     passed according to the param_variables
-    Returns the list of circuits with bound values DOES NOT MODIFY INPUT
-    (i.e. hardware details??)
+    Returns the list of circuits with bound values 
+    DOES NOT MODIFY INPUT (i.e. hardware details??)
+    Parameters
+    ----------
+    circ : single or list of quantum circuits with the same qk_vars
+    params_values: a 1d array of parameters (i.e. correspond to a single 
+        set of parameters)
+    param_variables: list of qk_vars, it should match element-wise
+        to the param_values
+    param_name: str if not None it will used to prepend the names
+        of the circuits created
+
+    Returns
+    -------
+        quantum circuits
     """
     if type(circ) != list: circ = [circ]
     val_dict = {key:val for key,val in zip(param_variables, param_values)}
     bound_circ = [cc.bind_parameters(val_dict) for cc in circ]
+    if param_name is not None:
+        bound_circ = ut.prefix_to_names(bound_circ, param_name)
     return bound_circ  
 
 #======================#
@@ -989,7 +1050,7 @@ class CrossFidelity(CostInterface):
             Evaluation of the inner sum of the cross-fidelity
         """
         # iterate over the elements of the computational basis (that 
-        # appear in the measurement results)
+        # appear in the measurement results)sublimes
         correlation_fixed_U = 0
         for sA,P_1_sA in P_1.items():
             for sAprime,P_2_sAprime in P_2.items():
