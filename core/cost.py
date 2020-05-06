@@ -79,7 +79,7 @@ class CostInterface(metaclass=abc.ABCMeta):
     @property
     @abc.abstractmethod
     def qk_vars(self):
-        """ Returns a list of qiskit.circuit.parameter.Parameter objects for the paramaterised circs"""
+        """ Returns a lisbind_params_to_meast of qiskit.circuit.parameter.Parameter objects for the paramaterised circs"""
         raise NotImplementedError
     
     @abc.abstractmethod
@@ -91,10 +91,12 @@ class CostInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
     
     def bind_params_to_meas(self, params = None, params_names = None):
-        """ Bind a list of parameters to named measurable circuits of the cost function 
+        """ 
+        Bind a list of parameters to named measurable circuits of the cost function 
+        
         Parameters
         ----------
-        params : None, or 1d, 2d numpy array (if 1d becomes 2d from np.atleast_2d)
+        params: None, or 1d, 2d numpy array (if 1d becomes 2d from np.atleast_2d)
             If None the function will return the unbound measurement circuit, 
             else it will bind each parameter to each of the measurable circuits
         params_names: if None nothing new happen (i.e. all circuits are named as self.name)

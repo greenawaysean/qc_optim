@@ -33,6 +33,11 @@ class Optimiser(ABC):
     def update(self,results_obj):
         """ Process a new set of data in the form of a results object """
         raise NotImplementedError
+    
+    @abstractmethod
+    def init_params(self):
+        """ Returns parameters required to initialize optimiser"""
+        raise NotImplementedError
 
     @property
     def prefix(self):
@@ -160,8 +165,8 @@ class SPSA(Optimiser):
         b_k = self._beta_schedule(self._iter) # size of the perturbation
         eps = np.sign(np.random.uniform(0, 1, self.nb_params) - 0.5) # direction of the perturbation
         x_last = self._x[-1]
-        x_p = np.clip(x_last + b_k * eps, , self._x_min, self._x_max)
-        x_m = np.clip(x_last - b_k * eps, , self._x_min, self._x_max)
+        x_p = np.clip(x_last + b_k * eps, self._x_min, self._x_max)
+        x_m = np.clip(x_last - b_k * eps, self._x_min, self._x_max)
         x_mp = [x_m, x_p]
         self._x_pm.append(x_mp)
         name_params = ['xm', 'xp']
@@ -366,7 +371,7 @@ class ParallelOptimizer():
         if self.method == 'shared':
             return [(ii, jj, jj) for ii in range(nb_optim) for jj in range(nb_optim)]
         elif self.method == 'independent':
-            return [(ii, ii, ii) for ii in range(nb_optim)]
+            return [(ii, ii, 0) for ii in range(nb_optim)]
         elif self.method == 'left':
             tuples = []
             for consumer_idx in range(nb_optim):
@@ -485,9 +490,7 @@ class ParallelOptimizer():
         Creates measurement circuits from supplied parameter points, assumes input 
         is of the form x_new = [[p11,p12...], [p21, p22.,,], ...] where pij is the 
         j'th parameter point requested bit circuit i. Input structure need not be square
-        
-        TODO: Use this elsewhere in the class? 
-        
+                
         Parameters:
         ---------------
         x_new: Nested list of parameter points assumed at least 3d, need not be square
@@ -495,33 +498,15 @@ class ParallelOptimizer():
         circs_to_exec = []
         cost_list = self.cost_objs
         self._last_x_new = x_new
-        for cst_idx, cst in enumerate(cost_list):
-            meas_circuits = cst.meas_circuits
-            qk_params = cst.ansatz.params
-            print(qk_params)
-            points = x_new[cst_idx]
-            for pt_idx,pt in enumerate(points):
-                this_id = ut.gen_random_str(8)
-                named_circs = ut.prefix_to_names(meas_circuits, this_id)
-                circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
-                self._parallel_x[cst_idx,pt_idx] = pt
-                self._parallel_id[cst_idx,pt_idx] = this_id
+
+        for cst_idx, (cst, points) in enumerate(zip(cost_list, x_new)):
+            print(cst.qk_vars)
+            idx_points = [ut.safe_string.gen(4) for _ in points]
+            circs_to_exec += cst.bind_params_to_meas(points, idx_points)
+            self._parallel_x.update({(cst_idx,pt_idx):pt for pt_idx, pt in enumerate(points) })
+            self._parallel_id.update({(cst_idx,pt_idx):idx for pt_idx, idx in enumerate(idx_points) })
         self.circs_to_exec = circs_to_exec
-        return circs_to_exec
-
-        # Fred
-        # circs_to_exec = []
-        # cost_list = self.cost_objs
-        # self._last_x_new = x_new
-
-        # for cst_idx, (cst, points) in enumerate(zip(cost_list, x_new)):
-        #     print(cst.qk_vars)
-        #     idx_points = [ut.gen_random_str(8) for _ in points]
-        #     circs_to_exec += cost.bind_params_to_meas(points, idx_points)
-        #     self._parallel_x[cst_idx, :] = points
-        #     self._parallel_id[cst_idx, :] = idx_points
-        # self.circs_to_exec = circs_to_exec
-        # return circs_to_exec        
+        return circs_to_exec        
 
 
 
@@ -549,17 +534,20 @@ class ParallelOptimizer():
             cost_list = [self.cost_objs[0]] # maybe run compatability check here? 
         else:
             cost_list = self.cost_objs
+        x_new = []
         for cst_idx,cst in enumerate(cost_list):
-            meas_circuits = cst.meas_circuits
-            qk_params = meas_circuits[0].parameters
+            # meas_circuits = cst.meas_circuits
+            # qk_params = meas_circuits[0].parameters
             points = self._get_random_points_in_domain(size=self.nb_init)
-            #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
-            for pt_idx,pt in enumerate(points):
-                this_id = ut.gen_random_str(8)
-                named_circs = ut.prefix_to_names(meas_circuits, this_id)
-                circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
-                self._parallel_x[cst_idx,pt_idx] = pt
-                self._parallel_id[cst_idx,pt_idx] = this_id
+            x_new.append(points)
+            # #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
+            # for pt_idx,pt in enumerate(points):
+            #     this_id = ut.gen_random_str(8)
+            #     named_circs = ut.prefix_to_names(meas_circuits, this_id)
+            #     circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
+            #     self._parallel_x[cst_idx,pt_idx] = pt
+            #     self._parallel_id[cst_idx,pt_idx] = this_id
+        circs_to_exec = self._gen_circuits_from_params(x_new)
         self.circs_to_exec = circs_to_exec
         return circs_to_exec
 
@@ -611,10 +599,11 @@ class ParallelOptimizer():
             opt = self.optim_list[evl]
             opt.X = np.vstack((opt.X, x))
             opt.Y = np.vstack((opt.Y, y))
+            # Replace with self.optim_list[eval].update(x, y)
         [opt.run_optimization(max_iter = 0, eps = 0) for opt in self.optim_list]
             
 
-    def next_evaluation_circuits(self, x_new=None):
+    def next_evaluation_circuits(self):
         """ 
         Return the set of executable (i.e. transpiled and bound) quantum 
         circuits that will carry out cost function evaluations at the 
@@ -628,16 +617,11 @@ class ParallelOptimizer():
         """
         self._parallel_id = {}
         self._parallel_x = {}
-        if x_new is None:
-            x_new = np.atleast_2d(np.squeeze([opt._compute_next_evaluations() for opt in self.optim_list]))
-        circs_to_exec = []
-        for cst_idx,(cst,pt) in enumerate(zip(self.cost_objs, x_new)):
-            this_id = ut.gen_random_str(8)
-            named_circs = ut.prefix_to_names(cst.meas_circuits, this_id)
-            circs_to_exec += cost.bind_params(named_circs, pt, cst.meas_circuits[0].parameters)
-            self._parallel_id[cst_idx,cst_idx] = this_id
-            self._parallel_x[cst_idx,cst_idx] = pt
-        circs_to_exec = circs_to_exec + self._get_padding_circuits()
+        x_new = [opt._compute_next_evaluations() for opt in self.optim_list]
+        # Kiran Replace with 
+        # x_new = [opt.next_params_points() for opt in self.optim_list]
+        circs_to_exec = self._gen_circuits_from_params(x_new)
+        # circs_to_exec += self._get_padding_circuits()
 
         # sanity check on number of circuits generated
         if self.method in ['independent','shared']:
@@ -668,6 +652,7 @@ class ParallelOptimizer():
         results_obj : Qiskit results obj
             The experiment results to use
         """
+        # Kiran: replace with 
         self._last_results_obj = results_obj
         for evl, req, par in self._sharing_matrix:
             x, y = self._cross_evaluation(evl, req, par)
@@ -731,3 +716,12 @@ def check_cost_objs_consistency(cost_objs):
         new_cost_objs.append(op)
 
     return new_cost_objs
+
+
+
+class FullOptimiserBO(ParallelOptimizer):
+    """ Perhaps a different way of handeling runable optimiser with no overhead"""
+    def _subclass_init(self):
+        """ Doesn't work yet, but something like this?"""
+        self.optimizer = [OptimiserBO(GPyOpt.methods.BayesianOptimization)]
+        ...
