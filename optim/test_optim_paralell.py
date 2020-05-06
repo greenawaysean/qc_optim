@@ -26,8 +26,8 @@ pi= np.pi
 NB_SHOTS_DEFAULT = 8192
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 85
-NB_ITER = 80
+NB_INIT = 5
+NB_ITER = 5
 CHOOSE_DEVICE = True
 
 
@@ -96,7 +96,7 @@ optim = op.ParallelOptimizer(cost_list[:2],
                               GPyOpt.methods.BayesianOptimization, 
                               optimizer_args = bo_args,
                               share_init = False,
-                              nb_init = 0,
+                              nb_init = 5,
                               method = 'independent')
 
 par = [[x_sol,x_sol/2], [x_sol]]
