@@ -1,10 +1,11 @@
 
 # list of * contents
 __all__ = [
-    'Optimiser',
+    'Method',
     'ParallelOptimizer',
 ]
 
+import GPyOpt
 import sys
 import numpy as np
 import utilities as ut
@@ -13,79 +14,88 @@ import cost
 from abc import ABC, abstractmethod
 pi = np.pi
 
-class Optimiser(ABC):
+class Method(ABC):
     """
-    Interface for an Optimiser class. The optimiser must have two methods:
+    Interface for an optimisation method. The optimiser must have two methods:
     one that returns a set of quantum circuits and another that takes new 
     data in and updates the internal state of the optimiser. It also has a
     property `prefix` that is used as an ID by the batch class.
     """
-
-    @abstractmethod
-    def next_evaluation_circuits(self):
-        """ 
-        Return the next set of Cost function evaluations, in the form of 
-        executable qiskit quantum circuits
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def update(self,results_obj):
-        """ Process a new set of data in the form of a results object """
-        raise NotImplementedError
+    
+    def __init__(self, args = None):
+        self._iter = 0 # keep track of iterations
+        self._type = None # type
+        self._iter_max = None
+        self._best_x = None
+        self._sub_class_init(args = args)
+        
+    def __call__(self, args):
+        self._sub_class_init(args = args)
     
     @abstractmethod
-    def init_params(self):
-        """ Returns parameters required to initialize optimiser"""
+    def _sub_class_init(self, args):
+        """ Any method spesific initial points to be passed here"""
         raise NotImplementedError
-
-    @property
-    def prefix(self):
-        return self._prefix
-
+        
+    @abstractmethod
+    def next_evaluation_params(self):
+        """ Returns a list of next parameters to be evaluated"""
+        raise NotImplementedError
+        
+    @abstractmethod
+    def update(self,x,y):
+        """ 
+        Process a new set of paramater evaluation points
+        
+        Parameters:
+        ------------
+        x: List of new parameter points evaluate
+        
+        y: Cost functgino evaluation(s) corresponding to x
+        """
+        raise NotImplementedError
+    
     @property
     def iter(self):
+        """ Returns number of time this method has been itterated"""
         return self._iter
 
     @property
     def best_x(self):
+        """ Returns the best guess for current optimum"""
         return self._best_x
 
-    def __init__(self):
-        self._iter = 0 # keep track of iterations
-        self._prefix = ut.gen_random_str(5) # make (almost certainly) unique id
-        self._type = None # type
-        self._iter_max = None
-        self._best_x = None
 
 
-class OptimiserBO(Optimiser):
+class MethodBO(Method):
     """
     Creates a warapper around GPyOpt.methods.BayesianOptimization """
-    
-    def __init__(self, optimiser):
+    def _sub_class_init(self, args = None):
         """
-        Creates a warapper around GPyOpt.methods.BayesianOptimization to be used
-        in ParallelOptimiser. 
-        TODO: Better input checks? 
+        BO spesific init, optimiser is constructor if created without args, else
+        optimiser is a initialized optimiser
         
         Parameters
-        ----------
-        optimiser: Must be an instance of 
+        ------------------
+        args: Input dict for a GPyOpt.methods.BayesianOptimization object. If args=None
+            optimizer is the class constructor
         """
-        if str(optimiser.__class__) != "<class 'type'>" or not hasattr(optimiser, 'mro'):
-            raise TypeError
-        raise Warning('This is experimental for now, only an example')
-        self.optimiser = optimiser
-        self._prefix = ut.safe_string.gen(3)
-    
-    def next_evaluation_circuits(self):
+        if args != None:
+            self.evaluated_init = (type(args['X']) != ut.NoneType)
+            self.optimiser = GPyOpt.methods.BayesianOptimization(args)
+            self._args = args
+        else:
+            self.optimiser = GPyOpt.methods.BayesianOptimization
+
+    def next_evaluation_params(self):
         """
-        Really only returns the next evaluation points requested by this optimiser
-        TODO: RENAME
+        Returns the next evaluation points requested by this optimiser
         """
-        x_new = np.atleast_2d(np.squeeze(self.optimiser._compute_next_evaluations()))
-        raise Warning('Currenty does not give format requried by _gen_circs_from_param')
+        if self.evaluated_init:
+            x_new = [self.optimiser._compute_next_evaluations()]
+        else:
+            x_new = [1,2,3,4,5,6]
+            self.evaluated_init = True
         return x_new
     
     def update(self, x_new, y_new):
@@ -101,9 +111,34 @@ class OptimiserBO(Optimiser):
         self.optimiser.X = np.vstack((self.optimiser.X, x_new))
         self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
         self.optimiser._update_model(self.optimiser.normalization_type)
+        self._iter += 1
+        self._best_x = self.optimiser.X[np.argmin(self.optimiser.model.predict(self.optimiser.X, with_noise=False)[0])]
         
-
-
+        
+    def _get_random_points_in_domain(self, size=1):
+        """ 
+        Generate a requested number of random points distributed uniformly
+        over the domain of the BO parameters. (moved from ParallelRunner)
+        
+        Parameters:
+        ----------
+        size: Number of random points requested
+        """
+        for idx,dirn in enumerate(self._args['domain']):
+            assert int(dirn['name'])==idx, 'BO domain dims not being returned in correct order.'
+            assert dirn['type']=='continuous', 'BO domain is not continuous, this is not supported.'
+    
+            dirn_min = dirn['domain'][0]
+            dirn_max = dirn['domain'][1]
+            if idx==0:
+                rand_points = np.random.uniform(dirn_min, dirn_max, size=(size,1))
+            else:
+                _next =  np.random.uniform(dirn_min, dirn_max, size=(size,1))
+                rand_points = np.hstack((rand_points,_next))
+    
+        return rand_points
+        
+        
 class SPSA(Optimiser):
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
     Implemented to perform minimization (can be extended for maximization)
@@ -261,7 +296,7 @@ class ParallelOptimizer():
     def __init__(self, 
                  cost_objs,
                  optimizer, # to replace default BO, extend to list? 
-                 optimizer_args, # also allow list of input args
+                 optimizer_args = None, # also allow list of input args
                  method = 'shared',
                  share_init = True,
                  nb_init = 10,
@@ -328,14 +363,14 @@ class ParallelOptimizer():
 
         # store inputs
         self.cost_objs = cost_objs
-        self.optimizer = optimizer
-        self.optimizer_args = optimizer_args
+        # self.optimizer = optimizer
+        # self.optimizer_args = optimizer_args
         self.method = method
         self._share_init = share_init
         self.nb_init = nb_init
         
         # make internal assets
-        self.optim_list = self._gen_optim_list()
+        self.optim_list = self._gen_optim_list(optimizer, optimizer_args)
         self._sharing_matrix = self._gen_sharing_matrix()
         self.circs_to_exec = None
         self._parallel_x = {}
@@ -345,24 +380,32 @@ class ParallelOptimizer():
         # unused currently
         self._initialised = False
 
-    @property    
-    def prefix(self):
-        return self._prefix
-
     
-    def _gen_optim_list(self):
+    def _gen_optim_list(self, optimizer, optimizer_args):
         """ 
-        Generate the list of internal optimser objects
-
-        Comments:
+        Generate the list of internal optimser objects, takes list of optimizer_args, 
+        or list of args and list of optimizers
+        
+        Parameters:
         ---------
-        Not really needed as a whole seperate function for now, but might be 
-        useful dealing with different types of optmizers
+        optimizer: An instance of the Method class, can be a list of different methods
+        
+        optimizer_args: Either None, a single args dict,or list of args dicts to initalize the optimizer
+            if None, it assumes optimizer has already been initalized
         """
-        optim_list =  [self.optimizer(**self.optimizer_args) for ii in range(len(self.cost_objs))]
-        return optim_list
-    
-    
+        optim_list = list(np.atleast_1d(optimizer))
+        optim_args_list = list(np.atleast_1d(optimizer_args))
+        if len(optim_list) == 1:
+            optim_list = optim_list * len(self.cost_objs)
+        if len(optim_args_list) == 1:
+            optim_args_list = optim_args_list*len(self.cost_objs)
+        
+        if type(optimizer_args) == ut.NoneType:
+            return optim_list
+        else:
+            return [opt(arg) for opt, arg in zip(optim_list, optim_args_list)]
+
+
     def _gen_sharing_matrix(self):
         """ 
         Generate the sharing tuples based on sharing mode
@@ -410,6 +453,7 @@ class ParallelOptimizer():
         of the evaluations requested by the optimisers with other random
         points, generate those circuits here
         """
+        raise Warning('Not tested')
         def _find_min_dist(a,b):
             """
             distance is euclidean distance, but since the values are angles we want to
@@ -509,7 +553,6 @@ class ParallelOptimizer():
         return circs_to_exec        
 
 
-
     def _results_from_last_x(self):
         """
         If specific points were requested, then this returns an array of the same 
@@ -529,6 +572,7 @@ class ParallelOptimizer():
         """ 
         Generates circuits to gather initialisation data for the optimizers
         """
+        raise DeprecationWarning("Initilization will now be dealt with in the Method class")
         circs_to_exec = []
         if self._share_init:
             cost_list = [self.cost_objs[0]] # maybe run compatability check here? 
