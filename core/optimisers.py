@@ -30,6 +30,7 @@ class Method(ABC):
         self._sub_class_init(args = args)
         
     def __call__(self, args):
+        """ Allow's quick init of internal optim hyperparams etc..."""
         self._sub_class_init(args = args)
     
     @abstractmethod
@@ -69,7 +70,9 @@ class Method(ABC):
 
 class MethodBO(Method):
     """
-    Creates a warapper around GPyOpt.methods.BayesianOptimization """
+    Creates a warapper around GPyOpt.methods.BayesianOptimization 
+    TODO: .update() implement by-hand updating of dynamic weights/update model 
+"""
     def _sub_class_init(self, args = None):
         """
         BO spesific init, optimiser is constructor if created without args, else
@@ -158,6 +161,7 @@ class SPSA():
         x_init,
         **spsa_args,
         ):
+        raise NotImplementedError('Not updated for new usage')
         """ 
         Parameters
         ----------
@@ -289,16 +293,12 @@ class ParallelRunner():
 
     TODO
     ----
-    _gen_optim_list : add check for list of optim args? 1/optim?
     _cross_evaluation : allow vectorized verion for fast evaluation?
-    gen_init_circuits : Update init points to take into accout domain 
-        (see ut.get_default_args)
-    gen_init_circuits : Making something like this automatic for quick 
-        compling measurement circuits
-    init_optimisers : allow for more than one initial 
-    next_evaluation_circuits  : Put interface for _compute_next_ev....
-    update & init_optimisers : generalise beyond BO optimisers
-    update : implement by-hand updating of dynamic weights?
+    add extra checks to inputs etc...
+    Fix padding circuits
+    Fix bug with nb_iter being defined in two places (only BO relevant?)
+    Fix updating bug in 'shared' method ()
+    Systematic generation of x_new points??? 
     """
 
     def __init__(self, 
@@ -392,6 +392,7 @@ class ParallelRunner():
     
     @property
     def prefix(self):
+        """ Special name for each instance"""
         return self._prefix
     
     def _gen_optim_list(self, optimizer, optimizer_args):
