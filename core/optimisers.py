@@ -38,6 +38,21 @@ class Optimiser(ABC):
     def prefix(self):
         return self._prefix
 
+    @property
+    def iter(self):
+        return self._iter
+
+    @property
+    def best_x(self):
+        return self._best_x
+
+    def __init__(self):
+        self._iter = 0 # keep track of iterations
+        self._prefix = ut.gen_random_str(5) # make (almost certainly) unique id
+        self._type = None # type
+        self._iter_max = None
+        self._best_x = None
+
 
 class OptimiserBO(Optimiser):
     """
@@ -92,101 +107,128 @@ class SPSA(Optimiser):
         self,
         cost_obj,
         domain,
-        x_init=None,
-        verbose=False,
+        x_init,
         **spsa_args,
         ):
         """ 
         Parameters
         ----------
-        cost_obj : Cost object
-        domain: list of tuples 
-            specify the domain of the optimization
-        x_init: 1D/2D np.array
-            if None x_init is uniformly drawn from the domain
-        verbose : bool, optional
-            Set level of output of the object
-        spsa_args : dict
-            typical_config = {'tol': 0, 'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0}
+            cost_obj : Cost object
+            domain: list of tuples or None 
+                specify the domain of the optimization
+                if None the parameters are unbounded but needs to provide x_init
+            x_init: 1D/2D np.array
+                if None x_init is uniformly drawn from the domain
+            verbose : bool, optional
+                Set level of output of the object
+            spsa_args : dict
+                typical_config = {'tol': 0, 'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0}
+        Comments
+        ----------
+        Implementation follows [Spall98] (with alpha->s and gamma->t)
+        + additional restricted domain
         """
-        import time
-        self._prefix = str(hash(time.time()))[:16]
-        self.nb_params = cost.nb_params
-
-        # unpack other args
         self.cost_obj = cost_obj
+        self.nb_params = cost_obj.nb_params
+
         if domain is None:
             self._x_min, self._x_max = -np.inf, np.inf
             assert x_init is not None, "If domain is None, x_init should be specified"
         else:
             assert len(domain) == self.nb_params, "Length of domain and nb_params do not match"
-
+            self._x_min, self._x_max = np.array(domain)[:,0], np.array(domain)[:,1]
             if x_init is None:
                 x_init = np.array([np.random.uniform(*d) for d in self.domain])
+
         self.domain = domain
         self.x_init = x_init
+        self._best_x = x_init
         self.verbose = verbose
         self.spsa_args = spsa_args
-
+        self._x = [x_init] # track x
+        self._x_mp = [] # track x -/+ perturbations
+        self._x_mp_names = [] 
         
         #Scheduleof the perturbations and step sizes
-        a = self.spsa_args['a']
-        A = self.spsa_args['A']
-        s = self.spsa_args['s']
-        b = self.spsa_args['b']
-        t = self.spsa_args['t']
-        self.alpha_schedule = lambda k: a / np.power(k+1+A, s)
-        self.beta_schedule = lambda k: b/np.power(k+1, t) 
+        a, A, s, b, t = [self.spsa_args[k] for k in ['a', 'A','s','b','t']]
+        self._alpha_schedule = lambda k: a / np.power(k+1+A, s)
+        self._beta_schedule = lambda k: b/np.power(k+1, t) 
         
-        #optim
-        self.x = [] # track x
-        self.x_mp = [] # track x -/+ perturbations 
-        self.params.append(x_init)
-        self._iter = 0
-    
+
     def next_evaluation_circuits(self):
         """ Needs evaluation of 2 points: x_m and x_p"""
-        b_k = self.beta_schedule(self._iter) # size of the perturbation
-        eps = np.sign(np.random.uniform(0, 1, self.nb_params) - 0.5) #direction of the perturbation
-        x_last, x_min, x_max = self.x[-1], self._x_min, self._x_max
-        x_p = np.clip(x_last + b_k * eps, x_min, x_max)
-        x_m = np.clip(x_last - b_k * eps, x_min, x_max)
+        b_k = self._beta_schedule(self._iter) # size of the perturbation
+        eps = np.sign(np.random.uniform(0, 1, self.nb_params) - 0.5) # direction of the perturbation
+        x_last = self._x[-1]
+        x_p = np.clip(x_last + b_k * eps, , self._x_min, self._x_max)
+        x_m = np.clip(x_last - b_k * eps, , self._x_min, self._x_max)
         x_mp = [x_m, x_p]
-        self.x_pm.append(x_mp)
-        return self._bind_circuits(x_mp)
-        
-    
-    def update(self,results_obj):
+        self._x_pm.append(x_mp)
+        name_params = ['xm', 'xp']
+        self._x_mp_names.append(name_params)
+        return self.cost_obj.bind_params_to_meas(x_mp, name_params)
+
+    def update(self, X, Y):
         """ Process a new set of data in the form of a results object """
-        f_m = self.cost_obj.evaluate_cost(results_obj, name = '0' + self._prefix)
-        f_p = self.cost_obj.evaluate_cost(results_obj, name = '1' + self._prefix)
-        x_m, x_p = self.x_mp[-1]
-        g_k = np.squeeze((f_m[0] - f_p[1]))/(x_p - x_m) #finite diff gradient approx 
+        assert len(X) == 2
+        assert len(Y) == 2
+        x_m, x_p = X
+        y_m, y_p = Y
+        g_k = np.squeeze((y_m - y_p))/(x_p - x_m) #finite diff gradient approx 
         a_k = self.alpha_schedule(self._iter) # step size
-        self.x.append(self.x[-1] + a_k * g_k)
+        self._best_x = np.clip(self.x[-1] + a_k * g_k, self._x_min, self._x_max)
+        self._x.append(self._best_x)
         self._iter += 1
 
-    def _bind_circuits(self,params_values):
-        """
-        Binds parameter values, getting the transpiled measurment circuits
-        and the qiskit parameter objects from `self.cost_obj`
-        """
-        if np.ndim(params_values)==1:
-            params_values = [params_values]
-
-        # package and bind circuits
-        bound_circs = []
-        for pidx,p in enumerate(params_values):
-            for cc in self.cost_obj.meas_circuits:
-                tmp = cc.bind_parameters(dict(zip(self.cost_obj.qk_vars, p)))
-                tmp.name = str(pidx) + self._prefix
-                bound_circs.append(tmp)
-             
-        return bound_circs
             
-    def get_best_x(self):
-        """ return the best params (last one)"""
-        return self.x[-1]
+    def _update_from_obj(self, results_obj, infos=None):
+        """ 
+        Update the state of the optimizer
+        Parameters
+        ----------
+        nb_iter : int
+            Number of steps
+        infos: None or dic
+            informations needed to process the dictionnary 
+            If dic it should be{'x':[x_m, x_p], 'names':[name_x_m, name_x_p])
+            If None
+        """
+
+        if infos is None:
+            names = self._x_mp_names[-1]
+            x =  self._x_mp_names[-1]
+        else:
+            names = infos['names']
+            x =  infos['x']
+
+        assert len(names) == 2
+        assert len(x) == 2
+        y_m, y_p = self.cost.evaluate_cost(results_obj, name = [names])
+        x_m, x_p = x
+        a_k = self.alpha_schedule(self._iter) # step size
+        self._best_x = np.clip(self.x[-1] + a_k * g_k, self._x_min, self._x_max)
+        self._x.append(self._best_x)
+        self._iter += 1
+
+    def run(self, nb_iter):
+        """ 
+        Run the full optimization (execution is provided by the cost.instance)
+        Parametersgedit
+        ----------
+        nb_iter : int
+            Number of steps
+        """
+        assert self.iter == 0
+        for n in range(nb_iter):
+            bound_circuits = self.next_evaluation_circuits()
+            res_obj = self.cost.instance.execute(bound_circuits)
+            self._update_from_obj(res_obj)
+
+    def verify(self, nb = 8):
+        """ evaluate the cost nb times for the best_x
+        """
+        res = self.cost.shot_noise(self._best_x, nb_experiments=nb)
+        return res
         
 
 class ParallelOptimizer():
@@ -269,7 +311,7 @@ class ParallelOptimizer():
             (Most real device backends accept up to 900 circuits in one job.)
         """
         # make (almost certainly) unique id
-        self._prefix = ut.gen_random_str(5)
+        self._prefix = ut.gen_random_str(5) 
 
         # check the method arg is recognised
         if not method in ['independent','shared','left','right']:
@@ -453,7 +495,7 @@ class ParallelOptimizer():
         circs_to_exec = []
         cost_list = self.cost_objs
         self._last_x_new = x_new
-        for cst_idx,cst in enumerate(cost_list):
+        for cst_idx, cst in enumerate(cost_list):
             meas_circuits = cst.meas_circuits
             qk_params = cst.ansatz.params
             print(qk_params)
@@ -466,6 +508,21 @@ class ParallelOptimizer():
                 self._parallel_id[cst_idx,pt_idx] = this_id
         self.circs_to_exec = circs_to_exec
         return circs_to_exec
+
+        # Fred
+        # circs_to_exec = []
+        # cost_list = self.cost_objs
+        # self._last_x_new = x_new
+
+        # for cst_idx, (cst, points) in enumerate(zip(cost_list, x_new)):
+        #     print(cst.qk_vars)
+        #     idx_points = [ut.gen_random_str(8) for _ in points]
+        #     circs_to_exec += cost.bind_params_to_meas(points, idx_points)
+        #     self._parallel_x[cst_idx, :] = points
+        #     self._parallel_id[cst_idx, :] = idx_points
+        # self.circs_to_exec = circs_to_exec
+        # return circs_to_exec        
+
 
 
     def _results_from_last_x(self):
