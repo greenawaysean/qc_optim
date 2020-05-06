@@ -371,7 +371,7 @@ def gen_res(bo):
     return res
 
 
-def gen_default_argsbo(f, domain, nb_init, eval_init=False):
+def gen_default_argsbo(f, domain, nb_init_single, nb_init_parallel, eval_init=False):
     """ maybe unnecessary"""
     default_args = {
            'model_update_interval':1, 
@@ -388,16 +388,17 @@ def gen_default_argsbo(f, domain, nb_init, eval_init=False):
                  for i, d in enumerate(domain)]
     # Generate random x uniformly (could implement other randomness) if not provided
     if eval_init:
-        x_init = np.transpose([np.random.uniform(*d, size = nb_init) for d in domain])
+        x_init = np.transpose([np.random.uniform(*d, size = nb_init_single) for d in domain])
         y_init = f(x_init)
         numdata_init=None
     else:
         y_init = None
         x_init = None
-        numdata_init = nb_init
+        numdata_init = nb_init_single
         
     default_args.update({'f':f, 'domain':domain_bo, 'X':x_init, 'Y':y_init,
-                         'initial_design_numdata': numdata_init})
+                         'initial_design_numdata': numdata_init,
+                         'nb_init_parallel': nb_init_parallel})
 
     return default_args
 
