@@ -80,9 +80,8 @@ bo_args = ut.gen_default_argsbo(f=lambda x: 0.5,
 # ======================== /
 # Init optimiser class
 # ======================== /
-import optimisers as op
+
 opt_bo = op.MethodBO
-opt_bo2 = op.MethodBO
 
 runner1 = op.ParallelRunner(cost_list[:2], 
                             opt_bo, 
@@ -91,24 +90,25 @@ runner1 = op.ParallelRunner(cost_list[:2],
                             nb_init = 5,
                             method = 'independent')
 
-runner2 = op.ParallelRunner(cost_list[:2], 
-                            [opt_bo, opt_bo2],
+runner2 = op.ParallelRunner(cost_list, 
+                            [opt_bo],
                             optimizer_args = bo_args,
                             nb_init = 5,
                             method = 'independent')
 
 single_bo = op.SingleBO(cst0, bo_args)
 
-runner = single_bo
+runner = runner2
 
-par = [[x_sol,x_sol/2], [x_sol]]
-
-Batch = ut.Batch(instance=inst)
-runner._gen_circuits_from_params(par, inplace = True)
-Batch.submit(runner)
-Batch.execute()
-runner._last_results_obj = Batch.result(runner)
-runner._results_from_last_x()
+if len(runner.cost_objs) == 2:
+    par = [[x_sol,x_sol/2], [x_sol]]
+    
+    Batch = ut.Batch(instance=inst)
+    runner._gen_circuits_from_params(par, inplace = True)
+    Batch.submit(runner)
+    Batch.execute()
+    runner._last_results_obj = Batch.result(runner)
+    runner._results_from_last_x()
 
 # # ========================= /
 # # But it works:
@@ -133,6 +133,17 @@ for ii in range(NB_ITER):
 
     # update sucessfull (shared data)
     print(len(runner.optim_list[0].optimiser.Y))
+    
+x_opt_pred = []
+for bo in runner.optim_list:
+    bo.run_optimization(max_iter = 0, eps = 0) 
+    (x_seen, y_seen), (x_exp,y_exp) = bo.get_best()
+    #fid_test(x_seen)
+    #fid_test(x_exp)
+    print(bo.model.model)
+    bo.plot_convergence()
+    plt.show()
+    x_opt_pred.append(bo.X[np.argmin(bo.model.predict(bo.X, with_noise=False)[0])])
 
 #%% Everything here is old and broken
 

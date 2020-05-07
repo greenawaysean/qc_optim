@@ -571,11 +571,7 @@ class ParallelRunner():
         # self.circs_to_exec = circs_to_exec
         # return circs_to_exec
         pass
-
-
-    def _get_random_points_in_domain(self,size=1):
-        raise NotImplementedError("Moved to method class - implimentation was BO spesific")
-    
+   
     
     def init_optimisers(self, results_obj = None): 
         """ 
@@ -656,7 +652,26 @@ class ParallelRunner():
             sharing_matrix = self._sharing_matrix
         for evl, req, par in sharing_matrix:
             x, y = self._cross_evaluation(evl, req, par)
-            opt = self.optim_list[evl].update(x, y)
+            self.optim_list[evl].update(x, y)
+    
+    def shot_noise(self, x_new, nb_trials = 8):
+        """
+        Calculates shot noise for each circuit for a single input parameter
+        
+        TODO: Allow for a list of parameter point (one per circuit)
+        
+        Parameters:
+        ---------
+        x_new: 
+            A single parameter point to calculate all cost functions
+        
+        nb_trials: 
+            The number of time the cost function is evaluated for the given point
+        """
+        x_new = [x_new] * nb_trials
+        x_new = [x_new] * len(self.cost_objs)
+        self.circs_to_exec = self._gen_circuits_from_params(x_new)
+        return x_new
 
         
 
