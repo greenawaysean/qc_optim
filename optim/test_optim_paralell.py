@@ -81,8 +81,8 @@ bo_args = ut.gen_default_argsbo(f=lambda x: 0.5,
 # Init optimiser class
 # ======================== /
 import optimisers as op
-opt_bo = op.MethodBO()
-opt_bo2 = op.MethodBO()
+opt_bo = op.MethodBO
+opt_bo2 = op.MethodBO
 
 runner1 = op.ParallelRunner(cost_list[:2], 
                             opt_bo, 
