@@ -261,70 +261,24 @@ class Batch():
         return results_obj
     
     def submit_exec_res(self, obj_in, name = None):
+        """
+        Submits, executs and returns the results object in one go
+        
+        Parameters:
+        -------------
+        obj_in:
+            Runner instance or list of circuits to execute
+        
+        name:
+            String to identify cricuits (must be spesified if obj_in is a list of circs)
+        """
         self.submit(obj_in, name)
         self.execute()
         if type(obj_in) == list:
             return self.result(name)
         else:
             return self.result(obj_in)        
-     
-    def _batch_create(self, gate_map, ansatz, cost_function, 
-                      nb_params, nb_qubits,
-                      be_manager, nb_shots, optim_lvl, seed):
-        """ TODO: Make seperate function when we make batch.py
-            Idea is to spam many cost functions for the optimizers"""
-        raise NotImplementedError
-        def _gen_inst_list(self, nb_shots, optim_lvl):
-            """ Generates a list of instances with different layouts from which the 
-                circuits are transpiled. These instances are NEVER used to execute"""
-            gate_map = self.gate_map
-            inst_list = []
-            for gm in gate_map:
-                inst = self._backend_manager.gen_instance_from_current(nb_shots=nb_shots,
-                                                                       optim_lvl=optim_lvl,
-                                                                       initial_layout=gm,
-                                                                       seed_transpiler=self.seed)
-                inst_list.append(inst)
-            return inst_list
-        self._instance_list = self._gen_inst_list(nb_shots=nb_shots,
-                                                  optim_lvl=optim_lvl)
-        self.seed = seed
-        self._backend_manager = be_manager
-        self.ansatz = np.atleast_1d(ansatz).tolist()
-        self.cost_function = np.atleast_1d(cost_function).tolist()
-        self.gate_map = np.atleast_2d(gate_map).tolist()
-        """ Returns a list of cost classes for each of inputs"""
-        if len(self.cost_function) > 1 and len(self.ansatz) > 1 and len(self.gate_map) > 1:
-            raise NotImplementedError()
-        cost_list = []    
-        if len(self.cost_function) > 1:
-            # iter over cost functions
-            instance = self._instance_list[0]
-            ansatz = self.ansatz[0]
-            for cf in self.cost_function:
-                cost_list.append(cf(ansatz = ansatz,
-                                    N = nb_qubits,
-                                    instance = instance,
-                                    nb_params = nb_params))
-        elif len(self.ansatz) > 1:
-            # iter over ansatz
-            cost_function = self.cost_function[0]
-            instance = self._instance_list[0]
-            for ans in self.ansatz:
-                cost_list.append(cost_function(ansatz = ans,
-                                               N = nb_qubits, 
-                                               instance = instance, 
-                                               nb_params = nb_params))
-        elif len(self.gate_map) > 1:
-            # iter over gate map
-            cost_function = self.cost_function[0]
-            ansatz = self.ansatz[0]
-            for inst in self._instance_list:
-                cost_list.append(cost_function(ansatz = ansatz,
-                                               N = nb_qubits, 
-                                               instance = inst, 
-                                               nb_params = nb_params))
-        return cost_list
+    
     
 
 class SafeString():

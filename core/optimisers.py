@@ -3,6 +3,9 @@
 __all__ = [
     'Method',
     'ParallelRunner',
+    'MethodBO',
+    'MethodSPSA',
+    'SingleBO',
 ]
 
 import sys
