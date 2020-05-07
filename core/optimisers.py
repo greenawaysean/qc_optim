@@ -697,7 +697,10 @@ def check_cost_objs_consistency(cost_objs):
     new_cost_objs = []
     for idx,op in enumerate(cost_objs):
 
-        if idx>0:
+        if idx == 0:
+            test_pauli_set = set([ p[1] for p in op.paulis ])
+            num_qubits = op.num_qubits  
+        else:
             assert op.num_qubits==num_qubits, ("Cost operators passed to"
                 +" do not all have the same number of qubits.")
 
@@ -721,9 +724,7 @@ def check_cost_objs_consistency(cost_objs):
                     wpo_to_add = wpo(paulis_to_add)
                     # add new paulis to current qubit op
                     op.add(wpo_to_add)
-        else:
-            test_pauli_set = set([ p[1] for p in op.paulis ])
-            num_qubits = op.num_qubits
+
 
         new_cost_objs.append(op)
 
