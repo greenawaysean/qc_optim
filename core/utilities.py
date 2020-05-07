@@ -193,7 +193,11 @@ class Batch():
         self.circ_list = []
         self._last_circ_list = None
         self._last_results_obj = None
-        self.instance = instance
+        if instance == None:
+            backend = qk.providers.aer.QasmSimulator()
+            self.instance = qk.aqua.QuantumInstance(backend, shots=256)
+        else:
+            self.instance = instance
         self._known_optims = []
     
     def submit(self, obj_in, name = None):
