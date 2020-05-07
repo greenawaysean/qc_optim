@@ -520,7 +520,7 @@ class ParallelRunner():
         self._last_x_new = x_new
 
         for cst_idx, (cst, points) in enumerate(zip(cost_list, x_new)):
-            print(cst.qk_vars)
+            # print(cst.qk_vars)
             idx_points = [ut.safe_string.gen(4) for _ in points]
             circs_to_exec += cst.bind_params_to_meas(points, idx_points)
             self._parallel_x.update({(cst_idx,pt_idx):pt for pt_idx, pt in enumerate(points) })
@@ -637,7 +637,7 @@ class ParallelRunner():
         return circs_to_exec
             
     
-    def update(self, results_obj, sharing_matrix = None):
+    def update(self, results_obj = None, sharing_matrix = None):
         """ 
         Update the internal state of the optimisers, currently specific
         to Bayesian optimisers
@@ -647,7 +647,10 @@ class ParallelRunner():
         results_obj : Qiskit results obj
             The experiment results to use
         """
-        self._last_results_obj = results_obj
+        if results_obj == None:
+            results_obj = self._last_results_obj
+        else:
+            self._last_results_obj = results_obj
         if sharing_matrix == None:
             sharing_matrix = self._sharing_matrix
         for evl, req, par in sharing_matrix:
@@ -668,8 +671,11 @@ class ParallelRunner():
         nb_trials: 
             The number of time the cost function is evaluated for the given point
         """
-        x_new = [x_new] * nb_trials
-        x_new = [x_new] * len(self.cost_objs)
+        if hasattr(x_new[0], '__iter__'):
+            x_new = np.array([x_new] * nb_trials).transpose((1,0,2))
+        else:
+            x_new = [x_new] * nb_trials
+            x_new = [x_new] * len(self.cost_objs)
         self.circs_to_exec = self._gen_circuits_from_params(x_new)
         return x_new
 

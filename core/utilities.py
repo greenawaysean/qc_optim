@@ -259,6 +259,14 @@ class Batch():
         if type(obj_in) != str:
             obj_in._last_results_obj = results_obj
         return results_obj
+    
+    def submit_exec_res(self, obj_in, name = None):
+        self.submit(obj_in, name)
+        self.execute()
+        if type(obj_in) == list:
+            return self.result(name)
+        else:
+            return self.result(obj_in)        
      
     def _batch_create(self, gate_map, ansatz, cost_function, 
                       nb_params, nb_qubits,

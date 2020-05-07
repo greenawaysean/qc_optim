@@ -23,10 +23,10 @@ import optimisers as op
 # Defaults
 # ===================
 pi= np.pi
-NB_SHOTS_DEFAULT = 8192
+NB_SHOTS_DEFAULT = 512
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 5
+NB_INIT = 75
 NB_ITER = 5
 CHOOSE_DEVICE = True
 
@@ -73,9 +73,9 @@ cost_list = [cst0, cst1, cst2, cst3, cst4]
 # ======================== /
 bo_args = ut.gen_default_argsbo(f=lambda x: 0.5, 
                                 domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
-                                nb_init_single=0,
+                                nb_init_single=NB_INIT,
                                 eval_init=False,
-                                nb_init_parallel=5)
+                                nb_init_parallel=NB_INIT)
 
 # ======================== /
 # Init optimiser class
@@ -87,63 +87,80 @@ runner1 = op.ParallelRunner(cost_list[:2],
                             opt_bo, 
                             optimizer_args = bo_args,
                             share_init = False,
-                            nb_init = 5,
+                            nb_init = NB_INIT,
                             method = 'independent')
 
 runner2 = op.ParallelRunner(cost_list, 
                             [opt_bo],
                             optimizer_args = bo_args,
-                            nb_init = 5,
+                            share_init = False,
+                            nb_init = NB_INIT,
                             method = 'independent')
 
 single_bo = op.SingleBO(cst0, bo_args)
 
 runner = runner2
 
-if len(runner.cost_objs) == 2:
-    par = [[x_sol,x_sol/2], [x_sol]]
-    
-    Batch = ut.Batch(instance=inst)
-    runner._gen_circuits_from_params(par, inplace = True)
-    Batch.submit(runner)
-    Batch.execute()
-    runner._last_results_obj = Batch.result(runner)
-    runner._results_from_last_x()
 
 # # ========================= /
 # # But it works:
 # ========================= /
 Batch = ut.Batch(instance=inst)
 runner.next_evaluation_circuits()
-Batch.submit(runner)
-Batch.execute()
-results_obj = Batch.result(runner)
-runner.init_optimisers(results_obj)
+print(len(runner.circs_to_exec))
+Batch.submit_exec_res(runner)
+runner.init_optimisers()
 
 # optimizers now have new init info. 
 print(runner.optim_list[0].optimiser.X)
 print(runner.optim_list[0].optimiser.Y)
 
+
+# Run optimizer step by step
 for ii in range(NB_ITER):
     runner.next_evaluation_circuits()
-    Batch.submit(runner)
-    Batch.execute()
-    results_obj = Batch.result(runner)
-    runner.update(results_obj)
-
-    # update sucessfull (shared data)
+    Batch.submit_exec_res(runner)
+    runner.update()
     print(len(runner.optim_list[0].optimiser.Y))
     
-x_opt_pred = []
-for bo in runner.optim_list:
+for opt in runner.optim_list:
+    bo = opt.optimiser
     bo.run_optimization(max_iter = 0, eps = 0) 
     (x_seen, y_seen), (x_exp,y_exp) = bo.get_best()
-    #fid_test(x_seen)
-    #fid_test(x_exp)
     print(bo.model.model)
     bo.plot_convergence()
     plt.show()
-    x_opt_pred.append(bo.X[np.argmin(bo.model.predict(bo.X, with_noise=False)[0])])
+
+# Get best_x
+x_opt_pred = [opt.best_x for opt in runner.optim_list]
+
+# Get baselines
+runner.shot_noise(x_sol, nb_trials=5)
+Batch.submit_exec_res(runner)
+baselines = runner._results_from_last_x()
+
+# Get bopt_results
+runner.shot_noise(x_opt_pred, nb_trials=5)
+Batch.submit_exec_res(runner)
+bopt_lines = runner._results_from_last_x()
+
+
+
+# ======================== /
+# Save BO's in different files
+# ======================== /
+for cst, bo, bl_val, bo_val in zip(runner.cost_objs,
+                                   runner.optim_list,
+                                   baselines,
+                                   bopt_lines):
+    bo = bo.optimiser
+    bo_args = bo.kwargs
+    ut.gen_pkl_file(cst, bo, 
+                    baseline_values = bl_val, 
+                    bopt_values = bo_val, 
+                    info = 'cx' + str(cst.main_circuit.count_ops()['cx']) + '_',
+                    dict_in = {'bo_args':bo_args,
+                               'x_sol':x_sol})
 
 #%% Everything here is old and broken
 
