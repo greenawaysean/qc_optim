@@ -81,9 +81,9 @@ class Method(ABC):
         It may be moved somewhere else
         """
         for n in range(nb_iter):
-            x_new = self.next_evaluation()
-            name_params = ['run' + str(i) + 'p' for i len(x_new)]
-            bound_circuits = cost_obj.bind_params_to_meas(next_x, name_params)            
+            x_new = self.next_evaluation_params()
+            name_params = ['run' + str(i) + 'p' for i in len(x_new)]
+            bound_circuits = cost_obj.bind_params_to_meas(x_new, name_params)            
             res_obj = cost.instance.execute(bound_circuits)
             y_new = [cost.evaluate_cost(res_obj, name = n) for n in name_params]
             self.update(x_new, y_new)
@@ -178,7 +178,7 @@ class MethodBO(Method):
         return rand_points
         
         
-class MethodSPSA(Optimiser):
+class MethodSPSA(Method):
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
     Implemented to perform minimization (can be extended for maximization)
     """
@@ -218,7 +218,6 @@ class MethodSPSA(Optimiser):
         self.x_init = x_init
         self.nb_params = len(x_init)
         self._best_x = x_init
-        self.verbose = verbose
         self._args = args
         self._x = [x_init] # track x
         self._x_mp = [] # track x -/+ perturbations
@@ -236,8 +235,8 @@ class MethodSPSA(Optimiser):
         b_k = self._beta_schedule(self._iter) # size of the perturbation
         eps = np.sign(np.random.uniform(0, 1, self.nb_params) - 0.5) # direction of the perturbation
         x_last = self._x[-1]
-        x_p = np.clip(x_last + b_k * eps, , self._x_min, self._x_max)
-        x_m = np.clip(x_last - b_k * eps, , self._x_min, self._x_max)
+        x_p = np.clip(x_last + b_k * eps, self._x_min, self._x_max)
+        x_m = np.clip(x_last - b_k * eps, self._x_min, self._x_max)
         return np.array([x_m, x_p])
 
     def update(self, x_new, y_new):
