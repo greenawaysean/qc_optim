@@ -731,8 +731,11 @@ def check_cost_objs_consistency(cost_objs):
 
 
 
+# Run optimiser is common to all? Maybe use an intermediate class 
+#   that impliments ParallelRunner and has method run_optimizer? 
+#   Logic is a bitch to usage is pretty useful
 class SingleBO(ParallelRunner):
-    """ Perhaps a different way of handeling runable optimiser with no overhead"""
+    """ Creates single BO optimiser that interfaces properly with batch"""
     def __init__(self, 
                  cost_obj,
                  optimizer_args):            
@@ -740,14 +743,29 @@ class SingleBO(ParallelRunner):
         super().__init__([cost_obj],
                          optimizer = optimizer,
                          optimizer_args = optimizer_args)
+    def run_optimizer(self, nb_iter):
+        """
+        Uses method._run_with_cost to run single evaluation
+        """
+        method = self.optim_list[0]
+        method._run_with_cost(nb_iter = nb_iter, 
+                              cost_obj = self.cost_objs[0])
         
     
 class SingleSPSA(ParallelRunner):
-    """ Perhaps a different way of handeling runable optimiser with no overhead"""
+    """ Creates single SPSA optimiser that interfaces properly with batch (Still buggy)"""
     def __init__(self, 
                  cost_obj,
-                 optimizer_args):            
+                 optimizer_args):
+        print("Warning: not debugged with Batch")
         optimizer = MethodSPSA
         super().__init__([cost_obj],
                          optimizer = optimizer,
                          optimizer_args = optimizer_args)
+    def run_optimizer(self, nb_iter):
+        """
+        Uses method._run_with_cost to run single evaluation
+        """
+        method = self.optim_list[0]
+        method._run_with_cost(nb_iter = nb_iter, 
+                              cost_obj = self.cost_objs[0])
