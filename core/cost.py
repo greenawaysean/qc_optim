@@ -869,6 +869,15 @@ class CrossFidelity(CostInterface):
             assert self._nb_random == comparison_metadata['nb_random'],_err_msg
             assert self._prefix == comparison_metadata['prefix'],_err_msg
 
+    @property
+    def nb_random(self):
+        return self._nb_random
+    
+    @property
+    def seed(self):
+        return self._seed
+    
+
     def _gen_random_measurements(self):
         """ 
         Creates a list of self._nb_random circuits with Haar random 
@@ -903,27 +912,11 @@ class CrossFidelity(CostInterface):
 
         return circ_list
 
-    def meas_circuits(self,*args):
-        """ 
-        Return the measurement circuits, optionally bound
-
-        Parameters
-        ----------
-        args : empty, or numpy array
-            If it is empty the function will return the unbound 
-            measurement circuit, else it will assume that the object
-            passed, args[0], is a numpy array of param values that will
-            be bound and the bound circs will be returned
-
-        Returns
-        -------
-            quantum circuits
-                The bound or unbound measurment circuits
-        """
-        if len(args)==0:
-            return self._meas_circuits
-        else:
-            return bind_params(self._meas_circuits,args[0],self.ansatz.params)
+    @property
+    def meas_circuits(self):
+        """ Returns list of measurement circuits needed to evaluate the cost function"""
+        circs = self._meas_circuits
+        return circs
 
     def tag_results_metadata(self,results):
         """
