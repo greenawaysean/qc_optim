@@ -20,6 +20,7 @@ TODO: Change params -> qk_vars to match cost interface better?
 __all__ = [
     'AnsatzInterface',
     'BaseAnsatz',
+    'TrivialAnsatz',
     'RandomAnsatz',
     'RegularXYZAnsatz',
     'RegularU3Ansatz',
@@ -109,6 +110,16 @@ class BaseAnsatz(AnsatzInterface):
     def nb_params(self):
         return self._nb_params
 
+class TrivialAnsatz(BaseAnsatz):
+    """ Ansatz that wraps a fixed circuit """
+
+    def __init__(self,fixed_circuit):
+        """ """
+        self._generate_circuit = (lambda: fixed_circuit)
+        self._generate_params = (lambda: [])
+
+        # explicitly call base class initialiser
+        super(TrivialAnsatz,self).__init__(fixed_circuit.num_qubits,0)
 
 class AnsatzFromFunction(AnsatzInterface):
     """ Returns an instance of the GHZ parameterized class"""
