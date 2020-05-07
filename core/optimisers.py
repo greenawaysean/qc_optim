@@ -89,12 +89,13 @@ class Method(ABC):
             self.update(x_new, y_new)
 
 
+
 class MethodBO(Method):
     """
     Creates a warapper around GPyOpt.methods.BayesianOptimization 
     TODO: .update() implement by-hand updating of dynamic weights/update model 
 """
-    def _sub_class_init(self, args = None):
+    def _sub_class_init(self, args):
         """
         BO spesific init, optimiser is constructor if created without args, else
         optimiser is a initialized optimiser
@@ -104,21 +105,13 @@ class MethodBO(Method):
         args: Input dict for a GPyOpt.methods.BayesianOptimization object. If args=None
             optimizer is the class constructor
         """
-        if str(optimiser.__class__) != "<class 'type'>" or not hasattr(optimiser, 'mro'):
-            raise TypeError
-        raise Warning('This is experimental for now, only an example')
-        self.optimiser = optimiser
-        self._prefix = ut.safe_string.gen(3)
-    
-    def next_evaluation(self):
-        if args != None:
+        if 'X' in args.keys():
             self.evaluated_init = (type(args['X']) != ut.NoneType)
-            self.optimiser = GPyOpt.methods.BayesianOptimization(**args)
-            self._args = args
         else:
-            self.optimiser = GPyOpt.methods.BayesianOptimization
             self.evaluated_init = False
-
+        self.optimiser = GPyOpt.methods.BayesianOptimization(**args)
+        self._args = args
+        
     def next_evaluation_params(self):
         """
         Returns the next evaluation points requested by this optimiser
@@ -386,9 +379,8 @@ class ParallelRunner():
         if type(optimizer_args) == ut.NoneType:
             return optim_list
         else:
-            [opt(arg) for opt, arg in zip(optim_list, optim_args_list)]
-            return optim_list
-
+            return [opt(arg) for opt, arg in zip(optim_list, optim_args_list)]
+             
 
     def _gen_sharing_matrix(self):
         """ 
