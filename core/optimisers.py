@@ -212,7 +212,10 @@ class MethodSPSA(Method):
                 x_init = np.array([np.random.uniform(*d) for d in domain])
         self.domain = domain
         self.x_init = x_init
+        
+        # KIRAN: Is this correct? 
         self.nb_params = len(x_init)
+        
         self._best_x = x_init
         self._args = args
         self._x = [x_init] # track x

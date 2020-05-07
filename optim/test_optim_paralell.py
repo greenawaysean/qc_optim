@@ -6,7 +6,6 @@ Created on Fri Mar  6 16:10:36 2020
 """
 
 import sys
-import GPyOpt
 import numpy as np
 import qiskit as qk
 import matplotlib.pyplot as plt
@@ -26,7 +25,7 @@ pi= np.pi
 NB_SHOTS_DEFAULT = 512
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 75
+NB_INIT = 5
 NB_ITER = 5
 CHOOSE_DEVICE = True
 
@@ -74,9 +73,10 @@ cost_list = [cst0, cst1, cst2, cst3, cst4]
 bo_args = ut.gen_default_argsbo(f=lambda x: 0.5, 
                                 domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
                                 nb_init_single=NB_INIT,
-                                eval_init=False,
-                                nb_init_parallel=NB_INIT)
-spsa_args = {'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0,'domain':[(0,1)]}
+                                eval_init=False)
+spsa_args = {'a':1, 'b':0.628, 's':0.602, 
+             't':0.101,'A':0,'domain':[(0,1)],
+             'x_init':None}
 
 # ======================== /
 # Init optimiser class
@@ -89,19 +89,19 @@ runner1 = op.ParallelRunner(cost_list[:2],
                             opt_bo, 
                             optimizer_args = bo_args,
                             share_init = False,
-                            nb_init = NB_INIT,
                             method = 'independent')
 
 runner2 = op.ParallelRunner(cost_list, 
                             [opt_bo],
                             optimizer_args = bo_args,
                             share_init = False,
-                            nb_init = NB_INIT,
                             method = 'independent')
 
 single_bo = op.SingleBO(cst0, bo_args)
 
-runner = runner2
+single_SPSA = op.SingleSPSA(cst0, spsa_args)
+
+runner = single_SPSA
 
 
 # # ========================= /

@@ -360,7 +360,7 @@ def gen_res(bo):
     return res
 
 
-def gen_default_argsbo(f, domain, nb_init_single, nb_init_parallel, eval_init=False):
+def gen_default_argsbo(f, domain, nb_init_single, eval_init=False):
     """ maybe unnecessary"""
     default_args = {
            'model_update_interval':1, 
@@ -386,8 +386,7 @@ def gen_default_argsbo(f, domain, nb_init_single, nb_init_parallel, eval_init=Fa
         numdata_init = nb_init_single
         
     default_args.update({'f':f, 'domain':domain_bo, 'X':x_init, 'Y':y_init,
-                         'initial_design_numdata': numdata_init,
-                         'nb_init_parallel': nb_init_parallel})
+                         'initial_design_numdata': numdata_init})
 
     return default_args
 
