@@ -67,70 +67,72 @@ cst4 = cost.GHZPauliCost(anz4, inst)
 cost_list = [cst0, cst1, cst2, cst3, cst4]
 
 
-# c0 = cst0.meas_circuits[0]
-# c1 = cst1.meas_circuits[0]
-# c2 = cst2.meas_circuits[0]
-# c3 = cst3.meas_circuits[0]
-# c4 = cst4.meas_circuits[0]
-
-
-# c0.draw(idle_wires=False)
-# c1.draw(idle_wires=False)
-# c2.draw(idle_wires=False)
-# c3.draw(idle_wires=False)
-# c4.draw(idle_wires=False)
 
 # ======================== /
 #  Default BO args - consider passing this into an extension of Batch class
 # ======================== /
 bo_args = ut.gen_default_argsbo(f=lambda x: 0.5, 
                                 domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
-                                nb_init=0,
-                                eval_init=False)
+                                nb_init_single=0,
+                                eval_init=False,
+                                nb_init_parallel=5)
 
 # ======================== /
 # Init optimiser class
 # ======================== /
+import optimisers as op
+opt_bo = op.MethodBO()
+opt_bo2 = op.MethodBO()
 
-optim = op.ParallelOptimizer(cost_list[:2], 
-                              GPyOpt.methods.BayesianOptimization, 
-                              optimizer_args = bo_args,
-                              share_init = False,
-                              nb_init = 5,
-                              method = 'independent')
+runner1 = op.ParallelRunner(cost_list[:2], 
+                            opt_bo, 
+                            optimizer_args = bo_args,
+                            share_init = False,
+                            nb_init = 5,
+                            method = 'independent')
+
+runner2 = op.ParallelRunner(cost_list[:2], 
+                            [opt_bo, opt_bo2],
+                            optimizer_args = bo_args,
+                            nb_init = 5,
+                            method = 'independent')
+
+single_bo = op.SingleBO(cst0, bo_args)
+
+runner = single_bo
 
 par = [[x_sol,x_sol/2], [x_sol]]
 
 Batch = ut.Batch(instance=inst)
-optim._gen_circuits_from_params(par)
-Batch.submit(optim)
+runner._gen_circuits_from_params(par, inplace = True)
+Batch.submit(runner)
 Batch.execute()
-optim._last_results_obj = Batch.result(optim)
-optim._results_from_last_x()
+runner._last_results_obj = Batch.result(runner)
+runner._results_from_last_x()
 
 # # ========================= /
 # # But it works:
 # ========================= /
 Batch = ut.Batch(instance=inst)
-optim.gen_init_circuits()
-Batch.submit(optim)
+runner.next_evaluation_circuits()
+Batch.submit(runner)
 Batch.execute()
-results_obj = Batch.result(optim)
-optim.init_optimisers(results_obj)
+results_obj = Batch.result(runner)
+runner.init_optimisers(results_obj)
 
 # optimizers now have new init info. 
-print(optim.optim_list[0].X)
-print(optim.optim_list[0].Y)
+print(runner.optim_list[0].optimiser.X)
+print(runner.optim_list[0].optimiser.Y)
 
 for ii in range(NB_ITER):
-    optim.next_evaluation_circuits()
-    Batch.submit(optim)
+    runner.next_evaluation_circuits()
+    Batch.submit(runner)
     Batch.execute()
-    results_obj = Batch.result(optim)
-    optim.update(results_obj)
+    results_obj = Batch.result(runner)
+    runner.update(results_obj)
 
     # update sucessfull (shared data)
-    print(len(optim.optim_list[0].Y))
+    print(len(runner.optim_list[0].optimiser.Y))
 
 #%% Everything here is old and broken
 
