@@ -1,11 +1,13 @@
 
 # list of * contents
 __all__ = [
-    'Optimiser',
-    'ParallelOptimizer',
+    'Method',
+    'ParallelRunner',
 ]
 
 import sys
+import pdb
+import GPyOpt
 import numpy as np
 import utilities as ut
 import copy
@@ -13,84 +15,99 @@ import cost
 from abc import ABC, abstractmethod
 pi = np.pi
 
-class Optimiser(ABC):
+class Method(ABC):
     """
-    Interface for an Optimiser class. The optimiser must have two methods:
-    one that returns a set of quantum circuits and another that takes new 
-    data in and updates the internal state of the optimiser. It also has a
-    property `prefix` that is used as an ID by the batch class.
+    Interface for an optimisation method. The optimiser must have two main methods:
+    one that returns a list of parameters to test and the second to update the 
+    internal state. The other methods deal with creating and updating optim hyper params
     """
-
-    @abstractmethod
-    def next_evaluation_circuits(self):
-        """ 
-        Return the next set of Cost function evaluations, in the form of 
-        executable qiskit quantum circuits
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def update(self,results_obj):
-        """ Process a new set of data in the form of a results object """
-        raise NotImplementedError
+    
+    def __init__(self, args = None):
+        self._iter = 0 # keep track of iterations
+        self._type = None # type
+        self._iter_max = None
+        self._best_x = None
+        self._sub_class_init(args = args)
+        
+    def __call__(self, args):
+        """ Allow's quick init of internal optim hyperparams etc..."""
+        self._sub_class_init(args = args)
     
     @abstractmethod
-    def init_params(self):
-        """ Returns parameters required to initialize optimiser"""
+    def _sub_class_init(self, args):
+        """ Any method spesific initial points to be passed here"""
         raise NotImplementedError
-
-    @property
-    def prefix(self):
-        return self._prefix
-
+        
+    @abstractmethod
+    def next_evaluation_params(self):
+        """ Returns a list of next parameters to be evaluated"""
+        raise NotImplementedError
+        
+    @abstractmethod
+    def update(self,x,y):
+        """ 
+        Process a new set of paramater evaluation points
+        
+        Parameters:
+        ------------
+        x: List of new parameter points evaluate
+        
+        y: Cost functgino evaluation(s) corresponding to x
+        """
+        raise NotImplementedError
+    
     @property
     def iter(self):
+        """ Returns number of time this method has been itterated"""
         return self._iter
 
     @property
     def best_x(self):
+        """ Returns the best guess for current optimum"""
         return self._best_x
 
-    def __init__(self):
-        self._iter = 0 # keep track of iterations
-        self._prefix = ut.gen_random_str(5) # make (almost certainly) unique id
-        self._type = None # type
-        self._iter_max = None
-        self._best_x = None
 
 
-class OptimiserBO(Optimiser):
+class MethodBO(Method):
     """
-    Creates a warapper around GPyOpt.methods.BayesianOptimization """
-    
-    def __init__(self, optimiser):
+    Creates a warapper around GPyOpt.methods.BayesianOptimization 
+    TODO: .update() implement by-hand updating of dynamic weights/update model 
+"""
+    def _sub_class_init(self, args = None):
         """
-        Creates a warapper around GPyOpt.methods.BayesianOptimization to be used
-        in ParallelOptimiser. 
-        TODO: Better input checks? 
+        BO spesific init, optimiser is constructor if created without args, else
+        optimiser is a initialized optimiser
         
         Parameters
-        ----------
-        optimiser: Must be an instance of 
+        ------------------
+        args: Input dict for a GPyOpt.methods.BayesianOptimization object. If args=None
+            optimizer is the class constructor
         """
-        if str(optimiser.__class__) != "<class 'type'>" or not hasattr(optimiser, 'mro'):
-            raise TypeError
-        raise Warning('This is experimental for now, only an example')
-        self.optimiser = optimiser
-        self._prefix = ut.safe_string.gen(3)
-    
-    def next_evaluation_circuits(self):
+        if args != None:
+            self.evaluated_init = (type(args['X']) != ut.NoneType)
+            self.optimiser = GPyOpt.methods.BayesianOptimization(**args)
+            self._args = args
+        else:
+            self.optimiser = GPyOpt.methods.BayesianOptimization
+            self.evaluated_init = False
+
+    def next_evaluation_params(self):
         """
-        Really only returns the next evaluation points requested by this optimiser
-        TODO: RENAME
+        Returns the next evaluation points requested by this optimiser
         """
-        x_new = np.atleast_2d(np.squeeze(self.optimiser._compute_next_evaluations()))
-        raise Warning('Currenty does not give format requried by _gen_circs_from_param')
+        if self.evaluated_init:
+            x_new = self.optimiser._compute_next_evaluations()
+        else:
+            size = self._args['nb_init_parallel']
+            x_new = self._get_random_points_in_domain(size = size)
         return x_new
     
     def update(self, x_new, y_new):
         """
         Updates the interal state of the optimiser with the data provided
+        
+        TODO: Fix input input so update can accept vectors. 
+        TODO: User better method to update internal model
         
         Parametres:
         -------------
@@ -98,13 +115,42 @@ class OptimiserBO(Optimiser):
         
         y_new: Cost functino evalutations for those parameter points
         """
+#        raise Warning('Need to fix dims: can currently only update one at a time')
         self.optimiser.X = np.vstack((self.optimiser.X, x_new))
         self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
         self.optimiser._update_model(self.optimiser.normalization_type)
         
-
-
-class SPSA(Optimiser):
+        # Is this the right place for iter? 
+        self._iter += 1
+        self.optimiser._update_model(self.optimiser.normalization_type)
+        self._best_x = self.optimiser.X[np.argmin(self.optimiser.model.predict(self.optimiser.X, with_noise=False)[0])]
+        self.evaluated_init = True
+        
+    def _get_random_points_in_domain(self, size=1):
+        """ 
+        Generate a requested number of random points distributed uniformly
+        over the domain of the BO parameters. (moved from ParallelRunner)
+        
+        Parameters:
+        ----------
+        size: Number of random points requested
+        """
+        for idx,dirn in enumerate(self._args['domain']):
+            assert int(dirn['name'])==idx, 'BO domain dims not being returned in correct order.'
+            assert dirn['type']=='continuous', 'BO domain is not continuous, this is not supported.'
+    
+            dirn_min = dirn['domain'][0]
+            dirn_max = dirn['domain'][1]
+            if idx==0:
+                rand_points = np.random.uniform(dirn_min, dirn_max, size=(size,1))
+            else:
+                _next =  np.random.uniform(dirn_min, dirn_max, size=(size,1))
+                rand_points = np.hstack((rand_points,_next))
+    
+        return rand_points
+        
+        
+class SPSA():
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
     Implemented to perform minimization (can be extended for maximization)
     """
@@ -115,6 +161,7 @@ class SPSA(Optimiser):
         x_init,
         **spsa_args,
         ):
+        raise NotImplementedError('Not updated for new usage')
         """ 
         Parameters
         ----------
@@ -236,7 +283,7 @@ class SPSA(Optimiser):
         return res
         
 
-class ParallelOptimizer():
+class ParallelRunner():
     """ 
     Class that wraps a set of quantum optimisation tasks. It separates 
     out the cost function evaluation requests from the updating of the 
@@ -246,22 +293,18 @@ class ParallelOptimizer():
 
     TODO
     ----
-    _gen_optim_list : add check for list of optim args? 1/optim?
     _cross_evaluation : allow vectorized verion for fast evaluation?
-    gen_init_circuits : Update init points to take into accout domain 
-        (see ut.get_default_args)
-    gen_init_circuits : Making something like this automatic for quick 
-        compling measurement circuits
-    init_optimisers : allow for more than one initial 
-    next_evaluation_circuits  : Put interface for _compute_next_ev....
-    update & init_optimisers : generalise beyond BO optimisers
-    update : implement by-hand updating of dynamic weights?
+    add extra checks to inputs etc...
+    Fix padding circuits
+    Fix bug with nb_iter being defined in two places (only BO relevant?)
+    Fix updating bug in 'shared' method ()
+    Systematic generation of x_new points??? 
     """
 
     def __init__(self, 
                  cost_objs,
                  optimizer, # to replace default BO, extend to list? 
-                 optimizer_args, # also allow list of input args
+                 optimizer_args = None, # also allow list of input args
                  method = 'shared',
                  share_init = True,
                  nb_init = 10,
@@ -316,7 +359,7 @@ class ParallelOptimizer():
             (Most real device backends accept up to 900 circuits in one job.)
         """
         # make (almost certainly) unique id
-        self._prefix = ut.gen_random_str(5) 
+        self._prefix = ut.safe_string.gen(5) 
 
         # check the method arg is recognised
         if not method in ['independent','shared','left','right']:
@@ -328,41 +371,57 @@ class ParallelOptimizer():
 
         # store inputs
         self.cost_objs = cost_objs
-        self.optimizer = optimizer
-        self.optimizer_args = optimizer_args
+
         self.method = method
         self._share_init = share_init
         self.nb_init = nb_init
         
         # make internal assets
-        self.optim_list = self._gen_optim_list()
+        self.optim_list = self._gen_optim_list(optimizer, optimizer_args)
         self._sharing_matrix = self._gen_sharing_matrix()
         self.circs_to_exec = None
         self._parallel_x = {}
         self._parallel_id = {}
         self._last_results_obj = None
         self._last_x_new = None
+        
         # unused currently
-        self._initialised = False
-
-    @property    
+        # self.optimizer = optimizer
+        # self.optimizer_args = optimizer_args
+        # self._initialised = False
+    
+    @property
     def prefix(self):
+        """ Special name for each instance"""
         return self._prefix
-
     
-    def _gen_optim_list(self):
+    def _gen_optim_list(self, optimizer, optimizer_args):
         """ 
-        Generate the list of internal optimser objects
-
-        Comments:
+        Generate the list of internal optimser objects, takes list of optimizer_args, 
+        or list of args and list of optimizers
+        
+        Parameters:
         ---------
-        Not really needed as a whole seperate function for now, but might be 
-        useful dealing with different types of optmizers
+        optimizer: An instance of the Method class, can be a list of different methods
+        
+        optimizer_args: Either None, a single args dict,or list of args dicts to initalize the optimizer
+            if None, it assumes optimizer has already been initalized
         """
-        optim_list =  [self.optimizer(**self.optimizer_args) for ii in range(len(self.cost_objs))]
-        return optim_list
-    
-    
+        
+        optim_list = list(np.atleast_1d(optimizer))
+        optim_args_list = list(np.atleast_1d(optimizer_args))
+        if len(optim_list) == 1:
+            optim_list = optim_list * len(self.cost_objs)
+        if len(optim_args_list) == 1:
+            optim_args_list = optim_args_list*len(self.cost_objs)
+        
+        if type(optimizer_args) == ut.NoneType:
+            return optim_list
+        else:
+            [opt(arg) for opt, arg in zip(optim_list, optim_args_list)]
+            return optim_list
+
+
     def _gen_sharing_matrix(self):
         """ 
         Generate the sharing tuples based on sharing mode
@@ -410,6 +469,7 @@ class ParallelOptimizer():
         of the evaluations requested by the optimisers with other random
         points, generate those circuits here
         """
+        raise Warning('Not tested with new method')
         def _find_min_dist(a,b):
             """
             distance is euclidean distance, but since the values are angles we want to
@@ -485,7 +545,7 @@ class ParallelOptimizer():
         return x, y
     
 
-    def _gen_circuits_from_params(self, x_new):
+    def _gen_circuits_from_params(self, x_new, inplace = False):
         """
         Creates measurement circuits from supplied parameter points, assumes input 
         is of the form x_new = [[p11,p12...], [p21, p22.,,], ...] where pij is the 
@@ -505,9 +565,9 @@ class ParallelOptimizer():
             circs_to_exec += cst.bind_params_to_meas(points, idx_points)
             self._parallel_x.update({(cst_idx,pt_idx):pt for pt_idx, pt in enumerate(points) })
             self._parallel_id.update({(cst_idx,pt_idx):idx for pt_idx, idx in enumerate(idx_points) })
-        self.circs_to_exec = circs_to_exec
+        if inplace:
+            self.circs_to_exec = circs_to_exec
         return circs_to_exec        
-
 
 
     def _results_from_last_x(self):
@@ -524,56 +584,37 @@ class ParallelOptimizer():
         return results
             
 
-
     def gen_init_circuits(self):
         """ 
         Generates circuits to gather initialisation data for the optimizers
         """
-        circs_to_exec = []
-        if self._share_init:
-            cost_list = [self.cost_objs[0]] # maybe run compatability check here? 
-        else:
-            cost_list = self.cost_objs
-        x_new = []
-        for cst_idx,cst in enumerate(cost_list):
-            # meas_circuits = cst.meas_circuits
-            # qk_params = meas_circuits[0].parameters
-            points = self._get_random_points_in_domain(size=self.nb_init)
-            x_new.append(points)
-            # #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
-            # for pt_idx,pt in enumerate(points):
-            #     this_id = ut.gen_random_str(8)
-            #     named_circs = ut.prefix_to_names(meas_circuits, this_id)
-            #     circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
-            #     self._parallel_x[cst_idx,pt_idx] = pt
-            #     self._parallel_id[cst_idx,pt_idx] = this_id
-        circs_to_exec = self._gen_circuits_from_params(x_new)
-        self.circs_to_exec = circs_to_exec
-        return circs_to_exec
+        raise DeprecationWarning("Initilization will now be dealt with in the Method class")
+        # circs_to_exec = []
+        # if self._share_init:
+        #     cost_list = [self.cost_objs[0]] # maybe run compatability check here? 
+        # else:
+        #     cost_list = self.cost_objs
+        # x_new = []
+        # for cst_idx,cst in enumerate(cost_list):
+        #     # meas_circuits = cst.meas_circuits
+        #     # qk_params = meas_circuits[0].parameters
+        #     points = self._get_random_points_in_domain(size=self.nb_init)
+        #     x_new.append(points)
+        #     # #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
+        #     # for pt_idx,pt in enumerate(points):
+        #     #     this_id = ut.gen_random_str(8)
+        #     #     named_circs = ut.prefix_to_names(meas_circuits, this_id)
+        #     #     circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
+        #     #     self._parallel_x[cst_idx,pt_idx] = pt
+        #     #     self._parallel_id[cst_idx,pt_idx] = this_id
+        # circs_to_exec = self._gen_circuits_from_params(x_new)
+        # self.circs_to_exec = circs_to_exec
+        # return circs_to_exec
+        pass
 
 
     def _get_random_points_in_domain(self,size=1):
-        """ 
-        Generate a requested number of random points distributed uniformly
-        over the domain of the BO parameters.
-        TODO: Deal with different optimizers having different domains?
-        """
-        if type(self.optimizer_args) is list:
-            raise NotImplementedError
-
-        for idx,dirn in enumerate(self.optimizer_args['domain']):
-            assert int(dirn['name'])==idx, 'BO domain dims not being returned in correct order.'
-            assert dirn['type']=='continuous', 'BO domain is not continuous, this is not supported.'
-
-            dirn_min = dirn['domain'][0]
-            dirn_diff = dirn['domain'][1]-dirn_min
-            if idx==0:
-                rand_points = dirn_min + dirn_diff*np.array([np.random.random(size=size)]).T
-            else:
-                _next = dirn_min + dirn_diff*np.array([np.random.random(size=size)]).T
-                rand_points = np.hstack((rand_points,_next))
-
-        return rand_points
+        raise NotImplementedError("Moved to method class - implimentation was BO spesific")
     
     
     def init_optimisers(self, results_obj = None): 
@@ -587,21 +628,19 @@ class ParallelOptimizer():
         """
         if results_obj == None:
             results_obj = self._last_results_obj
-        self._last_results_obj= results_obj
+        self._last_results_obj = results_obj
         nb_optim = len(self.optim_list)
+        # nb_init is now optimiser spesific what do??? 
         nb_init = self.nb_init
+        nb_init_requests = len(self._last_x_new[0])
+        if nb_init != nb_init_requests:
+            print("Warning: difference between input nb_init and dict nb_init are different, choosing the lesser of the two")
+            nb_init = min(nb_init, nb_init_requests)
         if self._share_init:
             sharing_matrix = [(cc,0,run) for cc in range(nb_optim) for run in range(nb_init)]
         else:
             sharing_matrix = [(cc,cc,run) for cc in range(nb_optim) for run in range(nb_init)]
-        for evl, req, run in sharing_matrix:
-            x, y = self._cross_evaluation(evl, req, run)
-            opt = self.optim_list[evl]
-            opt.X = np.vstack((opt.X, x))
-            opt.Y = np.vstack((opt.Y, y))
-            # Replace with self.optim_list[eval].update(x, y)
-        [opt.run_optimization(max_iter = 0, eps = 0) for opt in self.optim_list]
-            
+        self.update(results_obj, sharing_matrix)
 
     def next_evaluation_circuits(self):
         """ 
@@ -615,34 +654,34 @@ class ParallelOptimizer():
             An iterable with exactly 1 param point per cost function, if None
             is passed the function will query the internal optimisers
         """
+        if self.method in ['random1', 'random2', 'left', 'right']:
+            raise Warning("Padding is not added yet!!!")
         self._parallel_id = {}
         self._parallel_x = {}
-        x_new = [opt._compute_next_evaluations() for opt in self.optim_list]
-        # Kiran Replace with 
-        # x_new = [opt.next_params_points() for opt in self.optim_list]
+        x_new = [opt.next_evaluation_params() for opt in self.optim_list]
         circs_to_exec = self._gen_circuits_from_params(x_new)
-        # circs_to_exec += self._get_padding_circuits()
+        
+        self.circs_to_exec = circs_to_exec
 
         # sanity check on number of circuits generated
-        if self.method in ['independent','shared']:
-            assert len(self._parallel_id.keys())==len(self.cost_objs),('Should have '
-                +f'{len(self.cost_objs)}'+' circuits, but instead have '
-                +f'{len(self._parallel_id.keys())}')
-        elif self.method in ['random1','random2']:
-            assert len(self._parallel_id.keys())==len(self.cost_objs)**2,('Should have '
-                +f'{len(self.cost_objs)**2}'+' circuits, but instead have '
-                +f'{len(self._parallel_id.keys())}')
-        elif self.method in ['left','right']:
-            assert len(self._parallel_id.keys())==len(self.cost_objs)*(len(self.cost_objs)+1)//2,('Should have '
-                +f'{len(self.cost_objs)*(len(self.cost_objs)+1)//2}'
-                +' circuits, but instead have '+f'{len(self._parallel_id.keys())}')
+        # if self.method in ['independent','shared']:
+        #     assert len(self._parallel_id.keys())==len(self.cost_objs),('Should have '
+        #         +f'{len(self.cost_objs)}'+' circuits, but instead have '
+        #         +f'{len(self._parallel_id.keys())}')
+        # elif self.method in ['random1','random2']:
+        #     assert len(self._parallel_id.keys())==len(self.cost_objs)**2,('Should have '
+        #         +f'{len(self.cost_objs)**2}'+' circuits, but instead have '
+        #         +f'{len(self._parallel_id.keys())}')
+        # elif self.method in ['left','right']:
+        #     assert len(self._parallel_id.keys())==len(self.cost_objs)*(len(self.cost_objs)+1)//2,('Should have '
+        #         +f'{len(self.cost_objs)*(len(self.cost_objs)+1)//2}'
+        #         +' circuits, but instead have '+f'{len(self._parallel_id.keys())}')
 
         self.circs_to_exec = circs_to_exec
         return circs_to_exec
             
     
-
-    def update(self, results_obj):
+    def update(self, results_obj, sharing_matrix = None):
         """ 
         Update the internal state of the optimisers, currently specific
         to Bayesian optimisers
@@ -652,16 +691,15 @@ class ParallelOptimizer():
         results_obj : Qiskit results obj
             The experiment results to use
         """
-        # Kiran: replace with 
         self._last_results_obj = results_obj
-        for evl, req, par in self._sharing_matrix:
+        if sharing_matrix == None:
+            sharing_matrix = self._sharing_matrix
+        for evl, req, par in sharing_matrix:
             x, y = self._cross_evaluation(evl, req, par)
-            opt = self.optim_list[evl]
-            opt.X = np.vstack((opt.X, x))
-            opt.Y = np.vstack((opt.Y, y))
+            opt = self.optim_list[evl].update(x, y)
 
-        for opt in self.optim_list:
-            opt._update_model(opt.normalization_type)
+        
+
 
 def check_cost_objs_consistency(cost_objs):
     """
@@ -719,9 +757,13 @@ def check_cost_objs_consistency(cost_objs):
 
 
 
-class FullOptimiserBO(ParallelOptimizer):
+class SingleBO(ParallelRunner):
     """ Perhaps a different way of handeling runable optimiser with no overhead"""
-    def _subclass_init(self):
-        """ Doesn't work yet, but something like this?"""
-        self.optimizer = [OptimiserBO(GPyOpt.methods.BayesianOptimization)]
-        ...
+    def __init__(self, 
+                 cost_obj,
+                 optimizer_args, # also allow list of input args
+                 nb_init = 10):            
+        optimizer = MethodBO(optimizer_args)
+        super().__init__([cost_obj],
+                         optimizer = optimizer,
+                         nb_init = nb_init)
