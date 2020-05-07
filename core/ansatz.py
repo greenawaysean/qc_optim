@@ -20,6 +20,7 @@ TODO: Change params -> qk_vars to match cost interface better?
 __all__ = [
     'AnsatzInterface',
     'BaseAnsatz',
+    'TrivialAnsatz',
     'RandomAnsatz',
     'RegularXYZAnsatz',
     'RegularU3Ansatz',
