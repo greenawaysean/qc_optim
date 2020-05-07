@@ -67,6 +67,27 @@ class Method(ABC):
         return self._best_x
 
 
+    def _run_with_cost(self, nb_iter, cost_obj):
+        """ 
+        Run the full optimization as long a cost_obj is provided to deal with the evaluation
+        Parameters
+        ----------
+        nb_iter : int
+            Number of steps
+        cost_obj: Cost object
+            It is used to evaluate
+        Parameters
+        ---------- 
+        It may be moved somewhere else
+        """
+        for n in range(nb_iter):
+            x_new = self.next_evaluation()
+            name_params = ['run' + str(i) + 'p' for i len(x_new)]
+            bound_circuits = cost_obj.bind_params_to_meas(next_x, name_params)            
+            res_obj = cost.instance.execute(bound_circuits)
+            y_new = [cost.evaluate_cost(res_obj, name = n) for n in name_params]
+            self.update(x_new, y_new)
+
 
 class MethodBO(Method):
     """
@@ -83,6 +104,13 @@ class MethodBO(Method):
         args: Input dict for a GPyOpt.methods.BayesianOptimization object. If args=None
             optimizer is the class constructor
         """
+        if str(optimiser.__class__) != "<class 'type'>" or not hasattr(optimiser, 'mro'):
+            raise TypeError
+        raise Warning('This is experimental for now, only an example')
+        self.optimiser = optimiser
+        self._prefix = ut.safe_string.gen(3)
+    
+    def next_evaluation(self):
         if args != None:
             self.evaluated_init = (type(args['X']) != ut.NoneType)
             self.optimiser = GPyOpt.methods.BayesianOptimization(**args)
@@ -150,138 +178,79 @@ class MethodBO(Method):
         return rand_points
         
         
-class SPSA():
+class MethodSPSA(Optimiser):
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
     Implemented to perform minimization (can be extended for maximization)
     """
-    def __init__(
-        self,
-        cost_obj,
-        domain,
-        x_init,
-        **spsa_args,
-        ):
-        raise NotImplementedError('Not updated for new usage')
+    def _sub_class_init(self, args):
         """ 
         Parameters
         ----------
             cost_obj : Cost object
-            domain: list of tuples or None 
-                specify the domain of the optimization
-                if None the parameters are unbounded but needs to provide x_init
-            x_init: 1D/2D np.array
-                if None x_init is uniformly drawn from the domain
             verbose : bool, optional
                 Set level of output of the object
-            spsa_args : dict
-                typical_config = {'tol': 0, 'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0}
+            args : dict with keys/values
+                'x_init': None or np.array
+                'domain': None or list of N tuples
+                'a': float
+                'b':float 
+                's':float
+                't':float
+                'A':float
+            typical_args = {'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0,'domain':[(0,1)]}
         Comments
         ----------
         Implementation follows [Spall98] (with alpha->s and gamma->t)
         + additional restricted domain
         """
-        self.cost_obj = cost_obj
-        self.nb_params = cost_obj.nb_params
-
+        domain = args['domain']
+        x_init = args['x_init']
         if domain is None:
             self._x_min, self._x_max = -np.inf, np.inf
             assert x_init is not None, "If domain is None, x_init should be specified"
+            x_init = np.atleast_1d(np.squeeze(x_init))
+            assert np.ndim(x_init) == 1, "x_init should be a single set of paarmeters"
         else:
-            assert len(domain) == self.nb_params, "Length of domain and nb_params do not match"
             self._x_min, self._x_max = np.array(domain)[:,0], np.array(domain)[:,1]
             if x_init is None:
                 x_init = np.array([np.random.uniform(*d) for d in self.domain])
-
         self.domain = domain
         self.x_init = x_init
+        self.nb_params = len(x_init)
         self._best_x = x_init
         self.verbose = verbose
-        self.spsa_args = spsa_args
+        self._args = args
         self._x = [x_init] # track x
         self._x_mp = [] # track x -/+ perturbations
-        self._x_mp_names = [] 
+        self._x_mp_names = []  # track names
         
         #Scheduleof the perturbations and step sizes
-        a, A, s, b, t = [self.spsa_args[k] for k in ['a', 'A','s','b','t']]
+        a, A, s, b, t = [args[k] for k in ['a', 'A','s','b','t']]
         self._alpha_schedule = lambda k: a / np.power(k+1+A, s)
-        self._beta_schedule = lambda k: b/np.power(k+1, t) 
+        self._beta_schedule = lambda k: b / np.power(k+1, t) 
         
 
-    def next_evaluation_circuits(self):
-        """ Needs evaluation of 2 points: x_m and x_p"""
+    def next_evaluation_params(self):
+        """ Needs evaluation of 2 points: x_m (x minus some perturbation) and 
+        x_p (x plus some perturbation)"""
         b_k = self._beta_schedule(self._iter) # size of the perturbation
         eps = np.sign(np.random.uniform(0, 1, self.nb_params) - 0.5) # direction of the perturbation
         x_last = self._x[-1]
-        x_p = np.clip(x_last + b_k * eps, self._x_min, self._x_max)
-        x_m = np.clip(x_last - b_k * eps, self._x_min, self._x_max)
-        x_mp = [x_m, x_p]
-        self._x_pm.append(x_mp)
-        name_params = ['xm', 'xp']
-        self._x_mp_names.append(name_params)
-        return self.cost_obj.bind_params_to_meas(x_mp, name_params)
+        x_p = np.clip(x_last + b_k * eps, , self._x_min, self._x_max)
+        x_m = np.clip(x_last - b_k * eps, , self._x_min, self._x_max)
+        return np.array([x_m, x_p])
 
-    def update(self, X, Y):
-        """ Process a new set of data in the form of a results object """
-        assert len(X) == 2
-        assert len(Y) == 2
-        x_m, x_p = X
-        y_m, y_p = Y
+    def update(self, x_new, y_new):
+        """ Process a new set of X, Y to update the state of the optimizer
+        X, and Y should be 2d arrays with 2 elements in the first dimension """
+        x_m, x_p = x_new
+        y_m, y_p = y_new
         g_k = np.squeeze((y_m - y_p))/(x_p - x_m) #finite diff gradient approx 
         a_k = self.alpha_schedule(self._iter) # step size
         self._best_x = np.clip(self.x[-1] + a_k * g_k, self._x_min, self._x_max)
         self._x.append(self._best_x)
         self._iter += 1
 
-            
-    def _update_from_obj(self, results_obj, infos=None):
-        """ 
-        Update the state of the optimizer
-        Parameters
-        ----------
-        nb_iter : int
-            Number of steps
-        infos: None or dic
-            informations needed to process the dictionnary 
-            If dic it should be{'x':[x_m, x_p], 'names':[name_x_m, name_x_p])
-            If None
-        """
-
-        if infos is None:
-            names = self._x_mp_names[-1]
-            x =  self._x_mp_names[-1]
-        else:
-            names = infos['names']
-            x =  infos['x']
-
-        assert len(names) == 2
-        assert len(x) == 2
-        y_m, y_p = self.cost.evaluate_cost(results_obj, name = [names])
-        x_m, x_p = x
-        a_k = self.alpha_schedule(self._iter) # step size
-        self._best_x = np.clip(self.x[-1] + a_k * g_k, self._x_min, self._x_max)
-        self._x.append(self._best_x)
-        self._iter += 1
-
-    def run(self, nb_iter):
-        """ 
-        Run the full optimization (execution is provided by the cost.instance)
-        Parametersgedit
-        ----------
-        nb_iter : int
-            Number of steps
-        """
-        assert self.iter == 0
-        for n in range(nb_iter):
-            bound_circuits = self.next_evaluation_circuits()
-            res_obj = self.cost.instance.execute(bound_circuits)
-            self._update_from_obj(res_obj)
-
-    def verify(self, nb = 8):
-        """ evaluate the cost nb times for the best_x
-        """
-        res = self.cost.shot_noise(self._best_x, nb_experiments=nb)
-        return res
-        
 
 class ParallelRunner():
     """ 
