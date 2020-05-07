@@ -76,12 +76,14 @@ bo_args = ut.gen_default_argsbo(f=lambda x: 0.5,
                                 nb_init_single=NB_INIT,
                                 eval_init=False,
                                 nb_init_parallel=NB_INIT)
+spsa_args = {'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0,'domain':[(0,1)]}
 
 # ======================== /
 # Init optimiser class
 # ======================== /
 
 opt_bo = op.MethodBO
+opt_spsa = op.MethodSPSA
 
 runner1 = op.ParallelRunner(cost_list[:2], 
                             opt_bo, 

@@ -17,6 +17,7 @@ TODO: (FRED) Happy to deprecate add_path_GPyOpt/get_path_GPyOpt
 __all__ = [
     # Backend utilities
     'BackendManager',
+    'Batch',
     # BO related utilities
     'add_path_GPyOpt',
     'get_path_GPyOpt',
@@ -36,6 +37,7 @@ __all__ = [
     'get_LiH_qubit_op',
     'get_LiH_shift',
     'get_TFIM_qubit_op',
+    'safe_string',
 ]
 
 import dill

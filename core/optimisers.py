@@ -270,9 +270,7 @@ class ParallelRunner():
                  optimizer, # to replace default BO, extend to list? 
                  optimizer_args = None, # also allow list of input args
                  method = 'shared',
-                 share_init = True,
-                 nb_init = 10,
-                 ): 
+                 share_init = True): 
         """ 
         Parameters
         ----------
@@ -313,11 +311,6 @@ class ParallelRunner():
         share_init : boolean, optional
             Do the optimiser objects share initialisation data, or does each
             generate their own set?
-        nb_init : int or keyword 'max', default 'max'
-            (BO) Sets the number of initial data points to feed into the BO 
-            before starting iteration rounds. If set to 'max' it will 
-            generate the maximum number of initial points such that it 
-            submits `init_jobs` worth of circuits to a qiskit backend.
         init_jobs : int, default 1
             (BO) The number of qiskit jobs to use to generate initial data. 
             (Most real device backends accept up to 900 circuits in one job.)
@@ -338,7 +331,6 @@ class ParallelRunner():
 
         self.method = method
         self._share_init = share_init
-        self.nb_init = nb_init
         
         # make internal assets
         self.optim_list = self._gen_optim_list(optimizer, optimizer_args)
@@ -589,12 +581,7 @@ class ParallelRunner():
             results_obj = self._last_results_obj
         self._last_results_obj = results_obj
         nb_optim = len(self.optim_list)
-        # nb_init is now optimiser spesific what do??? 
-        nb_init = self.nb_init
-        nb_init_requests = len(self._last_x_new[0])
-        if nb_init != nb_init_requests:
-            print("Warning: difference between input nb_init and dict nb_init are different, choosing the lesser of the two")
-            nb_init = min(nb_init, nb_init_requests)
+        nb_init = len(self._last_x_new[0])
         if self._share_init:
             sharing_matrix = [(cc,0,run) for cc in range(nb_optim) for run in range(nb_init)]
         else:
@@ -745,9 +732,19 @@ class SingleBO(ParallelRunner):
     """ Perhaps a different way of handeling runable optimiser with no overhead"""
     def __init__(self, 
                  cost_obj,
-                 optimizer_args, # also allow list of input args
-                 nb_init = 10):            
-        optimizer = MethodBO(optimizer_args)
+                 optimizer_args):            
+        optimizer = MethodBO
         super().__init__([cost_obj],
                          optimizer = optimizer,
-                         nb_init = nb_init)
+                         optimizer_args = optimizer_args)
+        
+    
+class SingleSPSA(ParallelRunner):
+    """ Perhaps a different way of handeling runable optimiser with no overhead"""
+    def __init__(self, 
+                 cost_obj,
+                 optimizer_args):            
+        optimizer = MethodSPSA
+        super().__init__([cost_obj],
+                         optimizer = optimizer,
+                         optimizer_args = optimizer_args)
