@@ -209,7 +209,7 @@ class MethodSPSA(Method):
         else:
             self._x_min, self._x_max = np.array(domain)[:,0], np.array(domain)[:,1]
             if x_init is None:
-                x_init = np.array([np.random.uniform(*d) for d in self.domain])
+                x_init = np.array([np.random.uniform(*d) for d in domain])
         self.domain = domain
         self.x_init = x_init
         self.nb_params = len(x_init)
