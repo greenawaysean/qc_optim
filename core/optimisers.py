@@ -649,7 +649,8 @@ class ParallelRunner():
         self._parallel_x = {}
         x_new = [opt.next_evaluation_params() for opt in self.optim_list]
         if self._evaluated_init:
-            x_new = self._gen_padding_params(x_new)
+            if 'SPSA' not in [o._type for o in self.optim_list]:
+                x_new = self._gen_padding_params(x_new)
         circs_to_exec = self._gen_circuits_from_params(x_new, inplace = True)
         
         # sanity check on number of circuits generated
@@ -708,7 +709,7 @@ class ParallelRunner():
         else:
             x_new = [x_new] * nb_trials
             x_new = [x_new] * len(self.cost_objs)
-        self.circs_to_exec = self._gen_circuits_from_params(x_new)
+        self.circs_to_exec = self._gen_circuits_from_params(x_new, inplace = True)
         return x_new
 
 

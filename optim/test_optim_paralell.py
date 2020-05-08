@@ -26,25 +26,23 @@ NB_SHOTS_DEFAULT = 512
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
 NB_INIT = 5
-NB_ITER = 5
+NB_ITER = 20
 CHOOSE_DEVICE = True
 
 
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
-try:
-    bem
-except:
+if False:
     bem = ut.BackendManager()
-    
-if CHOOSE_DEVICE:
     bem.get_current_status()
     chosen_device = int(input('SELECT IBM DEVICE:'))
     bem.get_backend(chosen_device, inplace=True)
-else:
-    bem.get_backend(4, inplace=True)
-inst = bem.gen_instance_from_current(initial_layout=[1,3,2])
+    inst = bem.gen_instance_from_current(initial_layout=[1,3,2])
+    
+backend = qk.providers.aer.QasmSimulator()
+inst = qk.aqua.QuantumInstance(backend, shots = 512)
+
 
 # ===================
 # Generate ansatz and const functins (will generalize this in next update)
@@ -74,8 +72,9 @@ bo_args = ut.gen_default_argsbo(f=lambda x: .5,
                                 domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
                                 nb_init=NB_INIT,
                                 eval_init=False)
+
 spsa_args = {'a':1, 'b':0.628, 's':0.602, 
-             't':0.101,'A':0,'domain':[(0,1)],
+             't':0.101,'A':0,'domain':[(0, 2*np.pi) for i in range(anz0.nb_params)],
              'x_init':None}
 
 # ======================== /
@@ -92,8 +91,8 @@ runner1 = op.ParallelRunner(cost_list[:2],
                             method = 'shared')
 
 runner2 = op.ParallelRunner(cost_list[:2], 
-                            [opt_bo],
-                            optimizer_args = bo_args,
+                            opt_spsa,
+                            optimizer_args = spsa_args,
                             share_init = False,
                             method = 'independent')
 
@@ -108,7 +107,7 @@ single_bo = op.SingleBO(cst0, bo_args)
 
 single_SPSA = op.SingleSPSA(cst0, spsa_args)
 
-runner = runner3
+runner = runner2
 
 x_new = [[x_sol, x_sol], [x_sol]]
 
@@ -137,24 +136,29 @@ Batch.submit_exec_res(runner)
 runner.init_optimisers()
 
 # optimizers now have new init info. 
-print(runner.optim_list[0].optimiser.X)
-print(runner.optim_list[0].optimiser.Y)
-
+try:
+    print(runner.optim_list[0].optimiser.X)
+    print(runner.optim_list[0].optimiser.Y)
+except:
+    pass
 
 # Run optimizer step by step
 for ii in range(NB_ITER):
     runner.next_evaluation_circuits()
     Batch.submit_exec_res(runner)
     runner.update()
-    print(len(runner.optim_list[0].optimiser.Y))
-    
-for opt in runner.optim_list:
-    bo = opt.optimiser
-    bo.run_optimization(max_iter = 0, eps = 0) 
-    (x_seen, y_seen), (x_exp,y_exp) = bo.get_best()
-    print(bo.model.model)
-    bo.plot_convergence()
-    plt.show()
+    print(len(runner.optim_list[0]._x_mp))
+
+try: 
+    for opt in runner.optim_list:
+        bo = opt.optimiser
+        bo.run_optimization(max_iter = 0, eps = 0) 
+        (x_seen, y_seen), (x_exp,y_exp) = bo.get_best()
+        print(bo.model.model)
+        bo.plot_convergence()
+        plt.show()
+except:
+    pass
 
 # Get best_x
 x_opt_pred = [opt.best_x for opt in runner.optim_list]
@@ -174,18 +178,19 @@ bopt_lines = runner._results_from_last_x()
 # ======================== /
 # Save BO's in different files
 # ======================== /
-for cst, bo, bl_val, bo_val in zip(runner.cost_objs,
-                                   runner.optim_list,
-                                   baselines,
-                                   bopt_lines):
-    bo = bo.optimiser
-    bo_args = bo.kwargs
-    ut.gen_pkl_file(cst, bo, 
-                    baseline_values = bl_val, 
-                    bopt_values = bo_val, 
-                    info = 'cx' + str(cst.main_circuit.count_ops()['cx']) + '_',
-                    dict_in = {'bo_args':bo_args,
-                               'x_sol':x_sol})
+if False:
+    for cst, bo, bl_val, bo_val in zip(runner.cost_objs,
+                                       runner.optim_list,
+                                       baselines,
+                                       bopt_lines):
+        bo = bo.optimiser
+        bo_args = bo.kwargs
+        ut.gen_pkl_file(cst, bo, 
+                        baseline_values = bl_val, 
+                        bopt_values = bo_val, 
+                        info = 'cx' + str(cst.main_circuit.count_ops()['cx']) + '_',
+                        dict_in = {'bo_args':bo_args,
+                                   'x_sol':x_sol})
 
 #%% Everything here is old and broken
 
