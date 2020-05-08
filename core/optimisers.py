@@ -26,11 +26,13 @@ class Method(ABC):
     """
     
     def __init__(self, args = None):
+        self._nb_request = 1 # nb of points requested at each step
         self._iter = 0 # keep track of iterations
         self._type = None # type
         self._iter_max = None
         self._best_x = None
         self._sub_class_init(args = args)
+        
         
     def __call__(self, args):
         """ Allow's quick init of internal optim hyperparams etc..."""
@@ -105,6 +107,7 @@ class MethodBO(Method):
         args: Input dict for a GPyOpt.methods.BayesianOptimization object. If args=None
             optimizer is the class constructor
         """
+        self._type = 'BO'
         if 'X' in args.keys():
             self.evaluated_init = (type(args['X']) != ut.NoneType)
         else:
@@ -190,12 +193,16 @@ class MethodSPSA(Method):
                 's':float
                 't':float
                 'A':float
+                'minimize':True (optional it will behave as True by default)
             typical_args = {'a':1, 'b':0.628, 's':0.602, 't':0.101,'A':0,'domain':[(0,1)]}
         Comments
         ----------
         Implementation follows [Spall98] (with alpha->s and gamma->t)
         + additional restricted domain
         """
+        self._type = 'SPSA'
+        self._nb_request = 2
+        self._updated = True
         domain = args['domain']
         x_init = args['x_init']
         if domain is None:
@@ -217,13 +224,17 @@ class MethodSPSA(Method):
         self._args = args
         self._x = [x_init] # track x
         self._x_mp = [] # track x -/+ perturbations
-        self._x_mp_names = []  # track names
+        self._y_mp = []  # track y for x -/+ perturbations
         
         #Scheduleof the perturbations and step sizes
         a, A, s, b, t = [args[k] for k in ['a', 'A','s','b','t']]
-        self._alpha_schedule = lambda k: a / np.power(k+1+A, s)
-        self._beta_schedule = lambda k: b / np.power(k+1, t) 
-        
+        self._alpha_schedule = lambda k: a / np.power(k+1+A, s) # schedule size perturbation
+        self._beta_schedule = lambda k: b / np.power(k+1, t)  # schedule step
+        self._minimize = args.get('minimize', True)
+        if self._minimize:
+            self._factor_minimize = 1
+        else:
+            self._factor_minimize = -1
 
     def next_evaluation_params(self):
         """ Needs evaluation of 2 points: x_m (x minus some perturbation) and 
@@ -236,16 +247,48 @@ class MethodSPSA(Method):
         return np.array([x_m, x_p])
 
     def update(self, x_new, y_new):
-        """ Process a new set of X, Y to update the state of the optimizer
-        X, and Y should be 2d arrays with 2 elements in the first dimension """
-        x_m, x_p = x_new
-        y_m, y_p = y_new
-        g_k = np.squeeze((y_m - y_p))/(x_p - x_m) #finite diff gradient approx 
-        a_k = self.alpha_schedule(self._iter) # step size
-        self._best_x = np.clip(self.x[-1] + a_k * g_k, self._x_min, self._x_max)
-        self._x.append(self._best_x)
-        self._iter += 1
-
+        """ Process a new set of X, Y to update fully or partially the state 
+        of the optimizer
+        Parameters
+        ----------
+        X: 1d 2d array 
+           after being expanded to a 2d array it should have either one or 2 
+           elements in the first dimension 
+        Y: 1d 2d array 
+           after being expanded to a 2d array it should have either one or 2 
+           elements in the first dimension 
+        Comment
+        ----------
+        A complete update is performed if x_new and y_new contains both 2 elements
+            then the finite difference gradient can be computed
+        A partial update is performed when each element of x_new, y_new 
+            are updated separately. The full update will happen when it receives 
+            the second element
+        """
+        x_new, y_new = np.atleast_2d(x_new), np.atleast_2d(y_new)
+        assert (len(x_new) == len(y_new)) & (len(x_new) in [1, 2])
+        if len(x_new) == 1:
+            if self._updated:
+                self._partial_x = x_new
+                self._partial_y = y_new
+                self._updated = False
+            else:
+                x_new = np.vstack((self._partial_x, x_new))
+                y_new = np.vstack((self._partial_y, y_new))
+                self._partial_x = None
+                self._partial_y = None
+                self.update(x_new, y_new)
+        elif len(x_new) == 2:
+            x_m, x_p = x_new
+            y_m, y_p = y_new
+            g_k = np.squeeze((y_m - y_p))/(x_p - x_m) #finite diff gradient approx 
+            a_k = self._alpha_schedule(self._iter) # step size
+            self._best_x = np.clip(self._x[-1] + self._factor_minimize * a_k * g_k, self._x_min, self._x_max)
+            self._x_mp.append(x_new)
+            self._y_mp.append(y_new)
+            self._x.append(self._best_x)
+            self._updated = True
+            self._iter += 1
 
 class ParallelRunner():
     """ 
@@ -385,7 +428,8 @@ class ParallelRunner():
         if self.method == 'shared':
             return [(ii, jj, jj) for ii in range(nb_optim) for jj in range(nb_optim)]
         elif self.method == 'independent':
-            return [(ii, ii, 0) for ii in range(nb_optim)]
+            #return [(ii, ii, 0) for ii in range(nb_optim)]
+            return [(ii, ii, jj) for ii, opt in enumerate(self.optim_list) for jj in range(opt._nb_request)]
         elif self.method == 'left':
             tuples = []
             for consumer_idx in range(nb_optim):
@@ -586,6 +630,7 @@ class ParallelRunner():
             sharing_matrix = [(cc,0,run) for cc in range(nb_optim) for run in range(nb_init)]
         else:
             sharing_matrix = [(cc,cc,run) for cc in range(nb_optim) for run in range(nb_init)]
+        print(sharing_matrix)
         self.update(results_obj, sharing_matrix)
 
     def next_evaluation_circuits(self):
@@ -746,8 +791,11 @@ class SingleBO(ParallelRunner):
         """
         method = self.optim_list[0]
         method._run_with_cost(nb_iter = nb_iter, 
-                              cost_obj = self.cost_objs[0])
-        
+                              cost = self.cost_objs[0])
+    @property
+    def best_x(self):
+        """ Returns the best guess for current optimum"""
+        return self.optim_list[0]._best_x
     
 class SingleSPSA(ParallelRunner):
     """ Creates single SPSA optimiser that interfaces properly with batch (Still buggy)"""
@@ -765,4 +813,9 @@ class SingleSPSA(ParallelRunner):
         """
         method = self.optim_list[0]
         method._run_with_cost(nb_iter = nb_iter, 
-                              cost_obj = self.cost_objs[0])
+                              cost = self.cost_objs[0])
+    @property
+    def best_x(self):
+        """ Returns the best guess for current optimum"""
+        return self.optim_list[0]._best_x
+    
