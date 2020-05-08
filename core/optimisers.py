@@ -108,12 +108,15 @@ class MethodBO(Method):
         args: Input dict for a GPyOpt.methods.BayesianOptimization object. If args=None
             optimizer is the class constructor
         """
-        if 'X' in args.keys():
-            self.evaluated_init = (type(args['X']) != ut.NoneType)
-        else:
+        args_cp = copy.deepcopy(args)
+        if args_cp['X'] == None:
             self.evaluated_init = False
-        self.optimiser = GPyOpt.methods.BayesianOptimization(**args)
-        self._args = args
+            self._nb_init = args_cp['initial_design_numdata']
+            args_cp['initial_design_numdata'] = 0
+        else:
+            self.evaluated_init = True
+        self.optimiser = GPyOpt.methods.BayesianOptimization(**args_cp)
+        self._args = args_cp
         
     def next_evaluation_params(self):
         """
@@ -122,7 +125,7 @@ class MethodBO(Method):
         if self.evaluated_init:
             x_new = self.optimiser._compute_next_evaluations()
         else:
-            size = self._args['nb_init_parallel']
+            size = self._nb_init
             x_new = self._get_random_points_in_domain(size = size)
         return x_new
     
@@ -263,7 +266,6 @@ class ParallelRunner():
     _cross_evaluation : allow vectorized verion for fast evaluation?
     add extra checks to inputs etc...
     Fix padding circuits
-    Fix bug with nb_iter being defined in two places (only BO relevant?)
     Fix updating bug in 'shared' method ()
     Systematic generation of x_new points??? 
     """
@@ -344,15 +346,17 @@ class ParallelRunner():
         self._last_results_obj = None
         self._last_x_new = None
         
+        # Assumes all inputs are either all init or all not (add extra check)
+        if hasattr(self.optim_list[0], 'evaluated_init'):
+            self._evaluated_init = self.optim_list[0].evaluated_init
+        else:
+            self._evaluated_init = False
+        
+        
         # unused currently
         # self.optimizer = optimizer
         # self.optimizer_args = optimizer_args
-        # self._initialised = False
-    
-    @property
-    def prefix(self):
-        """ Special name for each instance"""
-        return self._prefix
+
     
     def _gen_optim_list(self, optimizer, optimizer_args):
         """ 
@@ -386,9 +390,9 @@ class ParallelRunner():
         """
         nb_optim = len(self.optim_list)
         if self.method == 'shared':
-            return [(ii, jj, jj) for ii in range(nb_optim) for jj in range(nb_optim)]
+            return [(ii, jj, ii) for ii in range(nb_optim) for jj in range(nb_optim)]
         elif self.method == 'independent':
-            return [(ii, ii, 0) for ii in range(nb_optim)]
+            return [(ii, ii, ii) for ii in range(nb_optim)]
         elif self.method == 'left':
             tuples = []
             for consumer_idx in range(nb_optim):
@@ -421,32 +425,40 @@ class ParallelRunner():
             return tuples
 
 
-    def _get_padding_circuits(self):
+    def _gen_padding_params(self, x_new):
         """
         Different sharing modes e.g. 'left' and 'right' require padding
         of the evaluations requested by the optimisers with other random
         points, generate those circuits here
         """
-        raise Warning('Not tested with new method')
+
         def _find_min_dist(a,b):
             """
             distance is euclidean distance, but since the values are angles we want to
             minimize the (element-wise) differences over optionally shifting one of the
             points by ±2\pi
             """
+            a = np.array(a)
+            b = np.array(b)
             disp_vector = np.minimum((a-b)**2,((a+2*np.pi)-b)**2)
             disp_vector = np.minimum(disp_vector,((a-2*np.pi)-b)**2)
             return np.sqrt(np.sum(disp_vector))
 
-        circs_to_exec = []
+        x_new_mat = [[None for ii in range(len(self.cost_objs))] for jj in range(len(self.cost_objs))]
         for consumer_idx,requester_idx,pt_idx in self._sharing_matrix:
+            # print(consumer_idx, requester_idx, pt_idx)
             # case where we need to generate a new evaluation
+            if (consumer_idx==requester_idx) and (requester_idx==pt_idx):
+                x_new_mat[requester_idx][pt_idx] = x_new[requester_idx][0]
             if (consumer_idx==requester_idx) and not (requester_idx==pt_idx):
-
                 # get the points that the two optimsers indexed by
                 # (`consumer_idx`==`requester_idx`) and `pt_idx` chose for their evals
-                generator_pt = self._parallel_x[requester_idx,requester_idx]
-                pt = self._parallel_x[pt_idx,pt_idx]
+                
+                # Replaced by Kiran
+                # generator_pt = self._parallel_x[requester_idx,requester_idx]
+                # pt = self._parallel_x[pt_idx,pt_idx]
+                generator_pt = x_new[requester_idx][0]
+                pt = x_new[pt_idx][0]
                 # separation between the points
                 dist = _find_min_dist(generator_pt,pt)
                 
@@ -456,17 +468,17 @@ class ParallelRunner():
                 random_displacement = random_displacement * dist/np.sqrt(np.sum(random_displacement**2))
                 # element-wise modulo 2\pi
                 new_pt = np.mod(generator_pt+random_displacement,2*np.pi)
-
-                # make new circuit
-                this_id = ut.gen_random_str(8)
-                named_circs = ut.prefix_to_names(self.cost_objs[requester_idx].meas_circuits, 
-                    this_id)
-                circs_to_exec += cost.bind_params(named_circs, new_pt, 
-                    self.cost_objs[requester_idx].ansatz.params)
-                self._parallel_id[requester_idx,pt_idx] = this_id
-                self._parallel_x[requester_idx,pt_idx] = new_pt
-
-        return circs_to_exec
+                x_new_mat[requester_idx][pt_idx] = new_pt
+                
+                # make new circuit now done in gen_circ_from_params
+                # this_id = ut.gen_random_str(8)
+                # named_circs = ut.prefix_to_names(self.cost_objs[requester_idx].meas_circuits, 
+                #     this_id)
+                # circs_to_exec += cost.bind_params(named_circs, new_pt, 
+                #     self.cost_objs[requester_idx].ansatz.params)
+                # self._parallel_id[requester_idx,pt_idx] = this_id
+                # self._parallel_x[requester_idx,pt_idx] = new_pt
+        return x_new_mat
 
 
     def _cross_evaluation(self, 
@@ -511,18 +523,32 @@ class ParallelRunner():
                 
         Parameters:
         ---------------
-        x_new: Nested list of parameter points assumed at least 3d, need not be square
+        x_new: 3d itterable array 
+            Nested list of parameter points assumed at least 3d, need not be square
+            
+        inplace: default False (maybe overkill)
+            If true changes internal executable circus. If false, simply returns 
+            executable circuits
         """
         circs_to_exec = []
         cost_list = self.cost_objs
-        self._last_x_new = x_new
+        
+        if inplace:
+            self._last_x_new = x_new
+            self._parallel_id = {}
+            self._parallel_x = {}
 
         for cst_idx, (cst, points) in enumerate(zip(cost_list, x_new)):
-            # print(cst.qk_vars)
-            idx_points = [ut.safe_string.gen(4) for _ in points]
-            circs_to_exec += cst.bind_params_to_meas(points, idx_points)
-            self._parallel_x.update({(cst_idx,pt_idx):pt for pt_idx, pt in enumerate(points) })
-            self._parallel_id.update({(cst_idx,pt_idx):idx for pt_idx, idx in enumerate(idx_points) })
+            for pt_idx, pt in enumerate(points):
+                if pt is not None:
+                    label = ut.safe_string.gen(4)
+                    circs_to_exec += cst.bind_params_to_meas(pt, label)
+                    self._parallel_x[(cst_idx,pt_idx)] = pt
+                    self._parallel_id[(cst_idx,pt_idx)] = label
+            # idx_points = [ut.safe_string.gen(4) for _ in points]                    
+            # circs_to_exec += cst.bind_params_to_meas(points, idx_points)
+            # self._parallel_x.update({(cst_idx,pt_idx):pt for pt_idx, pt in enumerate(points) })
+            # self._parallel_id.update({(cst_idx,pt_idx):idx for pt_idx, idx in enumerate(idx_points) })
         if inplace:
             self.circs_to_exec = circs_to_exec
         return circs_to_exec        
@@ -540,36 +566,7 @@ class ParallelRunner():
                 sub_results.append(self._cross_evaluation(cst_idx,cst_idx,pt)[1])
             results.append(sub_results)
         return results
-            
-
-    def gen_init_circuits(self):
-        """ 
-        Generates circuits to gather initialisation data for the optimizers
-        """
-        raise DeprecationWarning("Initilization will now be dealt with in the Method class")
-        # circs_to_exec = []
-        # if self._share_init:
-        #     cost_list = [self.cost_objs[0]] # maybe run compatability check here? 
-        # else:
-        #     cost_list = self.cost_objs
-        # x_new = []
-        # for cst_idx,cst in enumerate(cost_list):
-        #     # meas_circuits = cst.meas_circuits
-        #     # qk_params = meas_circuits[0].parameters
-        #     points = self._get_random_points_in_domain(size=self.nb_init)
-        #     x_new.append(points)
-        #     # #self._parallel_x.update({ (cst_idx,p_idx):p for p_idx,p in enumerate(points) })
-        #     # for pt_idx,pt in enumerate(points):
-        #     #     this_id = ut.gen_random_str(8)
-        #     #     named_circs = ut.prefix_to_names(meas_circuits, this_id)
-        #     #     circs_to_exec += cost.bind_params(named_circs, pt, qk_params)
-        #     #     self._parallel_x[cst_idx,pt_idx] = pt
-        #     #     self._parallel_id[cst_idx,pt_idx] = this_id
-        # circs_to_exec = self._gen_circuits_from_params(x_new)
-        # self.circs_to_exec = circs_to_exec
-        # return circs_to_exec
-        pass
-   
+               
     
     def init_optimisers(self, results_obj = None): 
         """ 
@@ -580,6 +577,8 @@ class ParallelRunner():
         results_obj : Qiskit results obj
             The experiment results to use
         """
+        if self._evaluated_init:
+            raise IndexError("Optimizers have already been initialized")
         if results_obj == None:
             results_obj = self._last_results_obj
         self._last_results_obj = results_obj
@@ -590,6 +589,7 @@ class ParallelRunner():
         else:
             sharing_matrix = [(cc,cc,run) for cc in range(nb_optim) for run in range(nb_init)]
         self.update(results_obj, sharing_matrix)
+        self._evaluated_init = True
 
     def next_evaluation_circuits(self):
         """ 
@@ -603,15 +603,13 @@ class ParallelRunner():
             An iterable with exactly 1 param point per cost function, if None
             is passed the function will query the internal optimisers
         """
-        if self.method in ['random1', 'random2', 'left', 'right']:
-            raise Warning("Padding is not added yet!!!")
         self._parallel_id = {}
         self._parallel_x = {}
         x_new = [opt.next_evaluation_params() for opt in self.optim_list]
-        circs_to_exec = self._gen_circuits_from_params(x_new)
+        if self._evaluated_init:
+            x_new = self._gen_padding_params(x_new)
+        circs_to_exec = self._gen_circuits_from_params(x_new, inplace = True)
         
-        self.circs_to_exec = circs_to_exec
-
         # sanity check on number of circuits generated
         # if self.method in ['independent','shared']:
         #     assert len(self._parallel_id.keys())==len(self.cost_objs),('Should have '
@@ -626,7 +624,6 @@ class ParallelRunner():
         #         +f'{len(self.cost_objs)*(len(self.cost_objs)+1)//2}'
         #         +' circuits, but instead have '+f'{len(self._parallel_id.keys())}')
 
-        self.circs_to_exec = circs_to_exec
         return circs_to_exec
             
     
@@ -672,6 +669,11 @@ class ParallelRunner():
         self.circs_to_exec = self._gen_circuits_from_params(x_new)
         return x_new
 
+
+    @property
+    def prefix(self):
+        """ Special name for each instance"""
+        return self._prefix
         
 
 
@@ -758,7 +760,7 @@ class SingleSPSA(ParallelRunner):
     def __init__(self, 
                  cost_obj,
                  optimizer_args):
-        print("Warning: not debugged with Batch")
+        print("Warning: SingleSPSA not debugged with Batch")
         optimizer = MethodSPSA
         super().__init__([cost_obj],
                          optimizer = optimizer,

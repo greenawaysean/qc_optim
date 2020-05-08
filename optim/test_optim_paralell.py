@@ -68,18 +68,18 @@ cost_list = [cst0, cst1, cst2, cst3, cst4]
 
 
 # ======================== /
-#  Default BO args - consider passing this into an extension of Batch class
+#  Default BO optim args
 # ======================== /
-bo_args = ut.gen_default_argsbo(f=lambda x: 0.5, 
+bo_args = ut.gen_default_argsbo(f=lambda x: .5, 
                                 domain= [(0, 2*np.pi) for i in range(anz0.nb_params)], 
-                                nb_init_single=NB_INIT,
+                                nb_init=NB_INIT,
                                 eval_init=False)
 spsa_args = {'a':1, 'b':0.628, 's':0.602, 
              't':0.101,'A':0,'domain':[(0,1)],
              'x_init':None}
 
 # ======================== /
-# Init optimiser class
+# Init runner classes with different methods
 # ======================== /
 
 opt_bo = op.MethodBO
@@ -89,25 +89,48 @@ runner1 = op.ParallelRunner(cost_list[:2],
                             opt_bo, 
                             optimizer_args = bo_args,
                             share_init = False,
-                            method = 'independent')
+                            method = 'shared')
 
-runner2 = op.ParallelRunner(cost_list, 
+runner2 = op.ParallelRunner(cost_list[:2], 
                             [opt_bo],
                             optimizer_args = bo_args,
                             share_init = False,
                             method = 'independent')
 
+runner3 = op.ParallelRunner(cost_list[:4], 
+                            [opt_bo],
+                            optimizer_args = bo_args,
+                            share_init = False,
+                            method = 'right')
+
+
 single_bo = op.SingleBO(cst0, bo_args)
 
 single_SPSA = op.SingleSPSA(cst0, spsa_args)
 
-runner = single_SPSA
+runner = runner3
 
+x_new = [[x_sol, x_sol], [x_sol]]
+
+# ========================= /
+# Testing circ generation and output formainting
+# ========================= /
+if False:
+    Batch = ut.Batch()
+    runner.next_evaluation_circuits()
+    print(runner.method)
+    print(runner._last_x_new)
+
+if len(runner.cost_objs) == 2:
+    runner._gen_circuits_from_params(x_new, inplace=True)
+    print(runner._last_x_new)
+    Batch.submit_exec_res(runner)
+    print(runner._results_from_last_x())
 
 # # ========================= /
-# # But it works:
+# # And initilization:
 # ========================= /
-Batch = ut.Batch(instance=inst)
+Batch = ut.Batch()
 runner.next_evaluation_circuits()
 print(len(runner.circs_to_exec))
 Batch.submit_exec_res(runner)
