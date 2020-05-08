@@ -432,7 +432,7 @@ class ParallelRunner():
         if self.method == 'shared':
             return [(ii, jj, ii) for ii in range(nb_optim) for jj in range(nb_optim)]
         elif self.method == 'independent':
-            return [(ii, ii, ii) for ii in range(nb_optim)]
+            #return [(ii, ii, ii) for ii in range(nb_optim)]
             return [(ii, ii, jj) for ii, opt in enumerate(self.optim_list) for jj in range(opt._nb_request)]
         elif self.method == 'left':
             tuples = []
