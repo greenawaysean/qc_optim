@@ -70,25 +70,22 @@ class Method(ABC):
         return self._best_x
 
 
-    def _run_with_cost(self, nb_iter, cost_obj):
+    def _run_with_cost(self, nb_iter, cost):
         """ 
-        Run the full optimization as long a cost_obj is provided to deal with the evaluation
+        Run the full optimization as long a cost is provided 
         Parameters
         ----------
         nb_iter : int
             Number of steps
-        cost_obj: Cost object
-            It is used to evaluate
+        cost_obj: Cost
+            a callable taking 1d-2d arrays of X and returning 2d arrays of Y
         Parameters
         ---------- 
         It may be moved somewhere else
         """
         for n in range(nb_iter):
             x_new = self.next_evaluation_params()
-            name_params = ['run' + str(i) + 'p' for i in len(x_new)]
-            bound_circuits = cost_obj.bind_params_to_meas(x_new, name_params)            
-            res_obj = cost.instance.execute(bound_circuits)
-            y_new = [cost.evaluate_cost(res_obj, name = n) for n in name_params]
+            y_new = cost(x_new)
             self.update(x_new, y_new)
 
 
