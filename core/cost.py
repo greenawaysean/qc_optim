@@ -70,17 +70,41 @@ pi =np.pi
 class CostInterface(metaclass=abc.ABCMeta):
     """ Implements interface that can be used in batch processing"""
 
+    def __add__(self,other):
+        """ 
+        '+' operator overload to allow adding of Cost objects that can
+        be different subclasses.
+
+        TODO
+        ----
+        - if the types of the input objects are the same the add could
+          preserve that and carry forward more data
+        """
+        # tests for whether adding is valid
+        assert self.ansatz==other.ansatz, "Cannot add two cost functions with different ansatz."
+        assert self.instance==other.instance, "Cannot add two cost functions with different quantum instances."
+        
+        # copy to decouple the output from the summed objects
+        tmp_1 = copy.deepcopy(self)
+        tmp_2 = copy.deepcopy(other)
+        
+        # make summed object
+        sum_cost = GenericCost()        
+        sum_cost.ansatz = tmp_1.ansatz
+        sum_cost._meas_circuits = tmp_1._meas_circuits + tmp_2._meas_circuits
+        sum_cost.evaluate_cost = (lambda x : tmp_1.evaluate_cost(x) + tmp_2.evaluate_cost(x))
+        return sum_cost
+
     @property
-    @abc.abstractmethod
     def meas_circuits(self):
-        """ Returns a list of measurement circs required to evaluate cost function"""
-        raise NotImplementedError
+        """ Returns list of measurement circuits needed to evaluate the cost function"""
+        circs = self._meas_circuits
+        return circs
     
     @property
-    @abc.abstractmethod
     def qk_vars(self):
-        """ Returns a lisbind_params_to_meast of qiskit.circuit.parameter.Parameter objects for the paramaterised circs"""
-        raise NotImplementedError
+        """ Returns parameter objects in the circuit"""
+        return self.ansatz.params
     
     @abc.abstractmethod
     def evaluate_cost(self, results : qk.result.result.Result, 
@@ -119,6 +143,15 @@ class CostInterface(metaclass=abc.ABCMeta):
             for p, pn in zip(params, params_names):
                 bound_circuits += bind_params(self._meas_circuits, p, self._qk_vars, pn)
         return bound_circuits   
+
+class GenericCost(CostInterface):
+
+    def evaluate_cost(
+        self, 
+        results : qk.result.result.Result, 
+        name=None
+        ):
+        pass
 
 #======================#
 # Base class
@@ -250,17 +283,6 @@ class Cost(CostInterface):
         self.main_circuit.name = self.name
         for c in self._meas_circuits:
             c.name = self.name
-            
-    @property
-    def meas_circuits(self):
-        """ Returns list of measurement circuits needed to evaluate the cost function"""
-        circs = self._meas_circuits
-        return circs
-    
-    @property
-    def qk_vars(self):
-        """ Returns parameter objects in the circuit"""
-        return self._qk_vars
     
     def evaluate_cost(self, results_obj, name = None):
         """ Returns cost value from a qiskit result object
@@ -804,7 +826,7 @@ class CrossFidelity(CostInterface):
     """
     def __init__(self,
                  ansatz,
-                 quantum_instance,
+                 instance,
                  comparison_results=None,
                  seed=0,
                  nb_random=5,
@@ -815,7 +837,7 @@ class CrossFidelity(CostInterface):
         ----------
         ansatz : object implementing AnsatzInterface
             The ansatz object that this cost can be optimsed over
-        quantum_instance : qiskit quantum instance
+        instance : qiskit quantum instance
             Will be used to generate internal transpiled circuits
         comparison_results : {dict, None}
             The use cases where None would be passed is if we are using
@@ -839,7 +861,7 @@ class CrossFidelity(CostInterface):
         if (not self.comparison_results is None) and (not type(self.comparison_results) is dict):
             self.comparison_results = self.comparison_results.to_dict()
         self.ansatz = ansatz
-        self.quantum_instance = quantum_instance
+        self.instance = instance
 
         # store hidden properties
         self._nb_random = nb_random
@@ -849,7 +871,7 @@ class CrossFidelity(CostInterface):
 
         # generate and store set of measurement circuits here
         self._meas_circuits = self._gen_random_measurements()
-        self._meas_circuits = self.quantum_instance.transpile(self._meas_circuits)
+        self._meas_circuits = self.instance.transpile(self._meas_circuits)
 
         # check if comparison_results contains the crossfidelity_metadata
         # tags and if it does compare them, if these comparisons fail then
@@ -912,12 +934,6 @@ class CrossFidelity(CostInterface):
 
         return circ_list
 
-    @property
-    def meas_circuits(self):
-        """ Returns list of measurement circuits needed to evaluate the cost function"""
-        circs = self._meas_circuits
-        return circs
-
     def tag_results_metadata(self,results):
         """
         Adds in CrossFidelity metadata to a results object. This can be
@@ -945,12 +961,6 @@ class CrossFidelity(CostInterface):
                 }
             })
         return results
-
-    def qk_vars(self):
-        """ 
-        Access the ansatz parameter objects
-        """
-        return self.ansatz.params
 
     def evaluate_cost(self,results):
         """ 
