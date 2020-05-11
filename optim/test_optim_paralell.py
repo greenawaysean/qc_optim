@@ -25,8 +25,8 @@ pi= np.pi
 NB_SHOTS_DEFAULT = 512
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 5
-NB_ITER = 20
+NB_INIT = 80
+NB_ITER = 80
 CHOOSE_DEVICE = True
 
 
@@ -88,7 +88,7 @@ runner1 = op.ParallelRunner(cost_list[:2],
                             opt_bo, 
                             optimizer_args = bo_args,
                             share_init = False,
-                            method = 'shared')
+                            method = 'independent')
 
 runner2 = op.ParallelRunner(cost_list[:2], 
                             opt_spsa,
@@ -147,7 +147,11 @@ for ii in range(NB_ITER):
     runner.next_evaluation_circuits()
     Batch.submit_exec_res(runner)
     runner.update()
-    print(len(runner.optim_list[0]._x_mp))
+    try:
+        print(len(runner.optim_list[0]._x_mp))
+    except:
+        print(len(runner.optim_list[0].optimiser.X))
+
 
 try: 
     for opt in runner.optim_list:
