@@ -42,11 +42,10 @@ __all__ = [
     'GraphCyclWitness3Cost',
     'freq_even',
     'expected_parity',
-    'get_substring'
+    'get_substring',
     'append_measurements',
     'gen_meas_circuits',
     'bind_params',
-    'Batch',
 ]
 
 import abc
@@ -135,6 +134,8 @@ class CostInterface(metaclass=abc.ABCMeta):
             bound_circuits = self._meas_circuits()
         else:
             params = np.atleast_2d(params)
+            if type(params_names) == str:
+                params_names = [params_names]
             if params_names is None: 
                 params_names = [None] * len(params)
             else:
