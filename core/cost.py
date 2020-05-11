@@ -245,7 +245,7 @@ class Cost(CostInterface):
         """
         if debug: pdb.set_trace()
         params = np.atleast_2d(params)
-        name_params = ['x' + str(i) for i in range(len(params))]
+        name_params = ['x' + str(i) + 'x' for i in range(len(params))]
 
         # List of all the circuits to be ran
         bound_circs = self.bind_params_to_meas(params, name_params)
@@ -1119,7 +1119,7 @@ if __name__ == '__main__':
         assert ghz_cost(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
         assert np.abs(ghz_cost(X_LOC) - 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.5 (up to sampling error)"
         
-        test_batch = ghz_cost([X_SOL] * 10)
+        test_batch = ghz_cost([X_SOL] * 11)
         
         # Witnesses inspired cost functions: they are different compared to the fidelity
         # but get maximized only when the state is the right one
