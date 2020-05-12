@@ -79,7 +79,7 @@ class Method(ABC):
         ----------
         nb_iter : int
             Number of steps
-        cost_obj: Cost
+        cost: Cost
             a callable taking 1d-2d arrays of X and returning 2d arrays of Y
         Parameters
         ---------- 
@@ -97,6 +97,12 @@ class MethodBO(Method):
     Creates a warapper around GPyOpt.methods.BayesianOptimization 
     TODO: .update() implement by-hand updating of dynamic weights/update model 
 """
+    @property
+    def best_x(self):
+        """ Update and return the best guess for current optimum"""
+        self._best_x = self.optimiser.X[np.argmin(self.optimiser.model.predict(self.optimiser.X, with_noise=False)[0])]
+        return self._best_x
+    
     def _sub_class_init(self, args):
         """
         BO spesific init, optimiser is constructor if created without args, else
@@ -109,13 +115,16 @@ class MethodBO(Method):
         """
         self._type = 'BO'
         args_cp = copy.deepcopy(args)
-        if args_cp['X'] == None:
+        if args_cp['X'] is None:
             self.evaluated_init = False
             self._nb_init = args_cp['initial_design_numdata']
             args_cp['initial_design_numdata'] = 0
         else:
             self.evaluated_init = True
         self.optimiser = GPyOpt.methods.BayesianOptimization(**args_cp)
+        # workaround
+        self.optimiser.num_acquisitions = 1
+        self._setup_dynamic_weights(args_cp)
         self._args = args_cp
         
     def next_evaluation_params(self):
@@ -145,12 +154,17 @@ class MethodBO(Method):
 #        raise Warning('Need to fix dims: can currently only update one at a time')
         self.optimiser.X = np.vstack((self.optimiser.X, x_new))
         self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
-        self.optimiser._update_model(self.optimiser.normalization_type)
+        # update
+        self.optimiser._update_model(self.optimiser.normalization_type)                
+        if(self._acq_weights_update): 
+            self._update_weights(self.optimiser)
         
-        # Is this the right place for iter? 
+        # It could also be + len(x_new)
         self._iter += 1
-        self.optimiser._update_model(self.optimiser.normalization_type)
-        self._best_x = self.optimiser.X[np.argmin(self.optimiser.model.predict(self.optimiser.X, with_noise=False)[0])]
+        self.optimiser.num_acquisitions += 1
+
+        # self.optimiser._update_model(self.optimiser.normalization_type)
+        # self._best_x = self.optimiser.X[np.argmin(self.optimiser.model.predict(self.optimiser.X, with_noise=False)[0])]
         self.evaluated_init = True
         
     def _get_random_points_in_domain(self, size=1):
@@ -175,8 +189,37 @@ class MethodBO(Method):
                 rand_points = np.hstack((rand_points,_next))
     
         return rand_points
+    
+    def _setup_dynamic_weights(self, bo_args):
+        """ building the rules to update the weights of the LCB acquisition 
+        function. 
+        Only effectively used if several conditions are fulfilled.
+        Parameters:
+        -------------
+        bo_args: dict
+            args to sub_init BO
+            needs 'acquisition_weight_lindec' to be True and 
+            'nb_iter' needs to be filled to be activated
+        """
+        if(bo_args.get('acquisition_weight_lindec') == True):
+            if(bo_args.get('nb_iter') is not None):
+                self._acq_weights_update = True
+                nb_iter_total = bo_args['nb_iter']
+                w_init = bo_args['acquisition_weight']
+                def update_weights(bo):
+                    new_w = max(0.000001, w_init  * (1 - bo.num_acquisitions / nb_iter_total))
+                    bo.acquisition.exploration_weight = new_w
+                self._update_weights = update_weights
+            else:
+                raise Warning('to allow for weights decay, you need to pass a nb_iter')
+                self._acq_weights_update = False
+                self._update_weights = False
+        else:
+            self._acq_weights_update = False
+            self._update_weights = False
         
-        
+
+
 class MethodSPSA(Method):
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
     Implemented to perform minimization (can be extended for maximization)

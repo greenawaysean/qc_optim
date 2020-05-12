@@ -264,6 +264,11 @@ class Cost(CostInterface):
         self.err_corr = error_correction
         if(self.err_corr):
             raise NotImplementedError
+            
+        if(args.get('invert')):
+            self._wrap_cost = lambda x: 1-x
+        else:
+            self._wrap_cost = lambda x: x
     
     def __call__(self, params, debug=False):
         """ Estimate the CostFunction for some parameters
@@ -279,7 +284,7 @@ class Cost(CostInterface):
         """
         if debug: pdb.set_trace()
         params = np.atleast_2d(params)
-        name_params = ['x' + str(i) for i in range(len(params))]
+        name_params = ['x' + str(i) + 'x' for i in range(len(params))]
 
         # List of all the circuits to be ran
         bound_circs = self.bind_params_to_meas(params, name_params)
@@ -349,7 +354,7 @@ class Cost(CostInterface):
         for ii in range(len(results_obj.results)):
             if name in results_obj.results[ii].header.name:
                 count_list.append(results_obj.get_counts(ii))
-        return self._meas_func(count_list)
+        return self._wrap_cost(self._meas_func(count_list))
 
     def shot_noise(self, params, nb_experiments=8):
         """ Sends a single job many times to see shot noise"""        
@@ -1153,7 +1158,7 @@ if __name__ == '__main__':
         assert ghz_cost(X_SOL) == 1.0, "For this ansatz, parameters, cost function should be one"
         assert np.abs(ghz_cost(X_LOC) - 0.5) < 0.1, "For this ansatz and parameters, the cost function should be close to 0.5 (up to sampling error)"
         
-        test_batch = ghz_cost([X_SOL] * 10)
+        test_batch = ghz_cost([X_SOL] * 11)
         
         # Witnesses inspired cost functions: they are different compared to the fidelity
         # but get maximized only when the state is the right one
