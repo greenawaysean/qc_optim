@@ -93,7 +93,7 @@ class CostInterface(metaclass=abc.ABCMeta):
             
             # make summed object
             sum_cost = GenericCost()
-            sum_cost.ansatz = self.ansatz # (here use the original so that sum_cost.ansatz==self.ansatz)
+            sum_cost.ansatz = self.ansatz # allows chained operations
             sum_cost._meas_circuits = tmp_1._meas_circuits + tmp_2._meas_circuits
             sum_cost.evaluate_cost = (
                 lambda x,name=None : tmp_1.evaluate_cost(x,name=name) + tmp_2.evaluate_cost(x,name=name)
@@ -103,7 +103,8 @@ class CostInterface(metaclass=abc.ABCMeta):
         elif (isinstance(other, (int, float, complex)) and not isinstance(other, bool)):
             # case: other is scalar
 
-            sum_cost = copy.copy(self) # not a deepcopy
+            sum_cost = copy.deepcopy(self) # not a deepcopy
+            sum_cost.ansatz = self.ansatz # allows chained operations
             sum_cost.evaluate_cost = (lambda x,name=None : other + self.evaluate_cost(x,name=name))
             return sum_cost
 
@@ -115,7 +116,8 @@ class CostInterface(metaclass=abc.ABCMeta):
         '*' operator overload to allow multiplying Cost objects with a
         scalar
         """
-        scaled_cost = copy.copy(self) # not a deepcopy
+        scaled_cost = copy.deepcopy(self)
+        scaled_cost.ansatz = self.ansatz # allows chained operations
         scaled_cost.evaluate_cost = (lambda x : scalar*self.evaluate_cost(x))
         return scaled_cost
 
