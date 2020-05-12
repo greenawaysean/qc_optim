@@ -79,20 +79,56 @@ class CostInterface(metaclass=abc.ABCMeta):
         - if the types of the input objects are the same the add could
           preserve that and carry forward more data
         """
-        # tests for whether adding is valid
-        assert self.ansatz==other.ansatz, "Cannot add two cost functions with different ansatz."
-        assert self.instance==other.instance, "Cannot add two cost functions with different quantum instances."
-        
-        # copy to decouple the output from the summed objects
-        tmp_1 = copy.deepcopy(self)
-        tmp_2 = copy.deepcopy(other)
-        
-        # make summed object
-        sum_cost = GenericCost()        
-        sum_cost.ansatz = tmp_1.ansatz
-        sum_cost._meas_circuits = tmp_1._meas_circuits + tmp_2._meas_circuits
-        sum_cost.evaluate_cost = (lambda x : tmp_1.evaluate_cost(x) + tmp_2.evaluate_cost(x))
-        return sum_cost
+        # catch whether other is a cost obj or a scalar
+        if issubclass(type(other),CostInterface):
+            # case: other is a cost object
+
+            # tests for whether adding is valid
+            assert self.ansatz==other.ansatz, "Cannot add two cost functions with different ansatz."
+            #assert self.instance==other.instance, "Cannot add two cost functions with different quantum instances."
+            
+            # copy to decouple the output from the summed objects
+            tmp_1 = copy.deepcopy(self)
+            tmp_2 = copy.deepcopy(other)
+            
+            # make summed object
+            sum_cost = GenericCost()
+            sum_cost.ansatz = self.ansatz # allows chained operations
+            sum_cost._meas_circuits = tmp_1._meas_circuits + tmp_2._meas_circuits
+            sum_cost.evaluate_cost = (
+                lambda x,name=None : tmp_1.evaluate_cost(x,name=name) + tmp_2.evaluate_cost(x,name=name)
+                )
+            return sum_cost
+
+        elif (isinstance(other, (int, float, complex)) and not isinstance(other, bool)):
+            # case: other is scalar
+
+            sum_cost = copy.deepcopy(self) # not a deepcopy
+            sum_cost.ansatz = self.ansatz # allows chained operations
+            sum_cost.evaluate_cost = (lambda x,name=None : other + self.evaluate_cost(x,name=name))
+            return sum_cost
+
+    def __radd__(self,other):
+        return self.__add__(other)
+
+    def __mul__(self,scalar):
+        """ 
+        '*' operator overload to allow multiplying Cost objects with a
+        scalar
+        """
+        scaled_cost = copy.deepcopy(self)
+        scaled_cost.ansatz = self.ansatz # allows chained operations
+        scaled_cost.evaluate_cost = (lambda x : scalar*self.evaluate_cost(x))
+        return scaled_cost
+
+    def __rmul__(self,scalar):
+        return self.__mul__(scalar)
+
+    def __sub__(self,other):
+        return self.__add__(other.__mul__(-1))
+
+    def __rsub__(self,other):
+        return self.__sub__(other)
 
     @property
     def meas_circuits(self):
