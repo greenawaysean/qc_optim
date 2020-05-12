@@ -230,6 +230,11 @@ class Cost(CostInterface):
         self.err_corr = error_correction
         if(self.err_corr):
             raise NotImplementedError
+            
+        if(args.get('invert')):
+            self._wrap_cost = lambda x: 1-x
+        else:
+            self._wrap_cost = lambda x: x
     
     def __call__(self, params, debug=False):
         """ Estimate the CostFunction for some parameters
@@ -315,7 +320,7 @@ class Cost(CostInterface):
         for ii in range(len(results_obj.results)):
             if name in results_obj.results[ii].header.name:
                 count_list.append(results_obj.get_counts(ii))
-        return self._meas_func(count_list)
+        return self._wrap_cost(self._meas_func(count_list))
 
     def shot_noise(self, params, nb_experiments=8):
         """ Sends a single job many times to see shot noise"""        
