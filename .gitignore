@@ -1,7 +1,10 @@
 *.ipynb
-_*
 /results_pkl
 /core/.ipynb_checkpoints
+*__pycache__
 
 # mac finder files
 *.DS_Store 
+
+# pip install directory
+*.egg-info/*

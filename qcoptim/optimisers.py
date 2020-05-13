@@ -5,17 +5,22 @@ __all__ = [
     'ParallelRunner',
     'MethodBO',
     'MethodSPSA',
+    'check_cost_objs_consistency',
     'SingleBO',
+    'SingleSPSA'
 ]
 
 import sys
 import pdb
+import copy
+from abc import ABC, abstractmethod
+
 import GPyOpt
 import numpy as np
-import utilities as ut
-import copy
-import cost
-from abc import ABC, abstractmethod
+
+from . import utilities as ut
+from . import cost
+
 pi = np.pi
 
 class Method(ABC):
@@ -90,13 +95,11 @@ class Method(ABC):
             y_new = cost(x_new)
             self.update(x_new, y_new)
 
-
-
 class MethodBO(Method):
     """
     Creates a warapper around GPyOpt.methods.BayesianOptimization 
     TODO: .update() implement by-hand updating of dynamic weights/update model 
-"""
+    """
     @property
     def best_x(self):
         """ Update and return the best guess for current optimum"""
@@ -151,9 +154,13 @@ class MethodBO(Method):
         
         y_new: Cost functino evalutations for those parameter points
         """
-#        raise Warning('Need to fix dims: can currently only update one at a time')
-        self.optimiser.X = np.vstack((self.optimiser.X, x_new))
-        self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
+        #raise Warning('Need to fix dims: can currently only update one at a time')
+        if not self.evaluated_init:
+            self.optimiser.X = np.array([x_new])
+            self.optimiser.Y = np.array([[y_new]])
+        else:
+            self.optimiser.X = np.vstack((self.optimiser.X, x_new))
+            self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
         # update
         self.optimiser._update_model(self.optimiser.normalization_type)                
         if(self._acq_weights_update): 
@@ -218,8 +225,6 @@ class MethodBO(Method):
             self._acq_weights_update = False
             self._update_weights = False
         
-
-
 class MethodSPSA(Method):
     """ Implementation of the Simultaneous Perturbation Stochastic Algo,
     Implemented to perform minimization (can be extended for maximization)
@@ -473,7 +478,7 @@ class ParallelRunner():
         """
         nb_optim = len(self.optim_list)
         if self.method == 'shared':
-            return [(ii, jj, ii) for ii in range(nb_optim) for jj in range(nb_optim)]
+            return [(ii, jj, jj) for ii in range(nb_optim) for jj in range(nb_optim)]
         elif self.method == 'independent':
             #return [(ii, ii, ii) for ii in range(nb_optim)]
             return [(ii, ii, jj) for ii, opt in enumerate(self.optim_list) for jj in range(opt._nb_request)]
@@ -627,8 +632,8 @@ class ParallelRunner():
                 if pt is not None:
                     label = ut.safe_string.gen(4)
                     circs_to_exec += cst.bind_params_to_meas(pt, label)
-                    self._parallel_x[(cst_idx,pt_idx)] = pt
-                    self._parallel_id[(cst_idx,pt_idx)] = label
+                    self._parallel_x[cst_idx,pt_idx] = pt
+                    self._parallel_id[cst_idx,pt_idx] = label
             # idx_points = [ut.safe_string.gen(4) for _ in points]                    
             # circs_to_exec += cst.bind_params_to_meas(points, idx_points)
             # self._parallel_x.update({(cst_idx,pt_idx):pt for pt_idx, pt in enumerate(points) })
@@ -662,7 +667,7 @@ class ParallelRunner():
             The experiment results to use
         """
         if self._evaluated_init:
-            raise IndexError("Optimizers have already been initialized")
+            raise Exception("Optimizers have already been initialized")
         if results_obj == None:
             results_obj = self._last_results_obj
         self._last_results_obj = results_obj
@@ -672,7 +677,7 @@ class ParallelRunner():
             sharing_matrix = [(cc,0,run) for cc in range(nb_optim) for run in range(nb_init)]
         else:
             sharing_matrix = [(cc,cc,run) for cc in range(nb_optim) for run in range(nb_init)]
-        print(sharing_matrix)
+        #print(sharing_matrix)
         self.update(results_obj, sharing_matrix)
         self._evaluated_init = True
 
@@ -690,10 +695,16 @@ class ParallelRunner():
         """
         self._parallel_id = {}
         self._parallel_x = {}
-        x_new = [opt.next_evaluation_params() for opt in self.optim_list]
         if self._evaluated_init:
+            x_new = [opt.next_evaluation_params() for opt in self.optim_list]
             if 'SPSA' not in [o._type for o in self.optim_list]:
                 x_new = self._gen_padding_params(x_new)
+        else:
+            if self._share_init:
+                # if init data is shared only get requests from first optim
+                x_new = [self.optim_list[0].next_evaluation_params()]
+            else:
+                x_new = [opt.next_evaluation_params() for opt in self.optim_list]
         circs_to_exec = self._gen_circuits_from_params(x_new, inplace = True)
         
         # sanity check on number of circuits generated
@@ -761,8 +772,6 @@ class ParallelRunner():
         """ Special name for each instance"""
         return self._prefix
         
-
-
 def check_cost_objs_consistency(cost_objs):
     """
     Carry out some error checking on the Cost objs passed to the class
@@ -817,8 +826,6 @@ def check_cost_objs_consistency(cost_objs):
         new_cost_objs.append(op)
 
     return new_cost_objs
-
-
 
 # Run optimiser is common to all? Maybe use an intermediate class 
 #   that impliments ParallelRunner and has method run_optimizer? 
