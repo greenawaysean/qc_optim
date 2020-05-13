@@ -18,6 +18,9 @@ __all__ = [
     # Backend utilities
     'BackendManager',
     'Batch',
+    'SafeString',
+    # safe string instance
+    'safe_string',
     # BO related utilities
     'add_path_GPyOpt',
     'get_path_GPyOpt',
@@ -37,7 +40,6 @@ __all__ = [
     'get_LiH_qubit_op',
     'get_LiH_shift',
     'get_TFIM_qubit_op',
-    'safe_string',
 ]
 
 import dill
@@ -359,7 +361,6 @@ def gen_res(bo):
            'gp_params_names':bo.model.model.parameter_names()}
     return res
 
-
 def gen_default_argsbo(f, domain, nb_init, eval_init=False):
     """ maybe unnecessary"""
     default_args = {
@@ -396,7 +397,6 @@ def gen_random_str(nb_chars = 5):
     rnd = ''.join([random.choice(choose_from) for ii in range(nb_chars)])
     return rnd
 
-
 def prefix_to_names(circ_list, st_to_prefix):
     """ Returns a NEW list of circs with new names appended"""
     circ_list = copy.deepcopy(circ_list)
@@ -414,14 +414,16 @@ def gen_ro_noisemodel(err_proba = [[0.1, 0.1],[0.1,0.1]], qubits=[0,1]):
     return noise_model
 
 # Save data from the cost fucntion and opt
-def gen_pkl_file(cost,
-                 Bopt,
-                 baseline_values = None, 
-                 bopt_values = None,
-                 info = '',
-                 path = '',
-                 file_name = None,
-                 dict_in = None):
+def gen_pkl_file(
+    cost,
+    Bopt,
+    baseline_values = None, 
+    bopt_values = None,
+    info = '',
+    path = '',
+    file_name = None,
+    dict_in = None,
+    ):
     """ Streamlines save"""
     
     if file_name is None:
@@ -832,7 +834,5 @@ def get_TFIM_qubit_op(
     qubitOp = wpo(pauli_terms)
 
     return qubitOp
-
-
 
 safe_string = SafeString()

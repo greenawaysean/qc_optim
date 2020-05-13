@@ -18,13 +18,17 @@ TODO: Change params -> qk_vars to match cost interface better?
 
 # list of * contents
 __all__ = [
+    # ansatz classes
     'AnsatzInterface',
     'BaseAnsatz',
     'TrivialAnsatz',
+    'AnsatzFromFunction',
     'RandomAnsatz',
     'RegularXYZAnsatz',
     'RegularU3Ansatz',
-    'AnsatzFromFunction',
+    # helper functions
+    'count_params_from_func',
+
 ]
 
 import abc
@@ -63,7 +67,6 @@ class AnsatzInterface(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def nb_params(self):
         raise NotImplementedError
-
 
 class BaseAnsatz(AnsatzInterface):
     """ """
@@ -170,7 +173,6 @@ class AnsatzFromFunction(AnsatzInterface):
     @property
     def nb_params(self):
         return self._nb_params
-
 
 class RandomAnsatz(BaseAnsatz):
     """ """

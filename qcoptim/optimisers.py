@@ -7,6 +7,7 @@ __all__ = [
     'MethodSPSA',
     'check_cost_objs_consistency',
     'SingleBO',
+    'SingleSPSA'
 ]
 
 import sys

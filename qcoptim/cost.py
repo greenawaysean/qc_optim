@@ -30,8 +30,11 @@ scope of the classes here
 # list of * contents
 __all__ = [
     'CostInterface',
+    'GenericCost',
     'Cost',
     'compare_layout',
+    'OneQProjZ',
+    'OneQXYZ',
     'GHZPauliCost',
     'GHZWitness1Cost',
     'GHZWitness2Cost',
@@ -46,6 +49,8 @@ __all__ = [
     'append_measurements',
     'gen_meas_circuits',
     'bind_params',
+    'CostWPO',
+    'CrossFidelity',
 ]
 
 import abc
@@ -862,7 +867,7 @@ def bind_params(circ, param_values, param_variables, param_name = None):
     return bound_circ  
 
 #======================#
-# Cross-fidelity class
+# Qiskit WPO class
 #======================#
 
 class CostWPO(CostInterface):
@@ -962,6 +967,10 @@ class CostWPO(CostInterface):
             return np.real(mean)
         else:
             return mean
+
+#======================#
+# Cross-fidelity class
+#======================#
 
 class CrossFidelity(CostInterface):
     """

@@ -5,3 +5,6 @@ _*
 
 # mac finder files
 *.DS_Store 
+
+# pip install directory
+*.egg-info/*
