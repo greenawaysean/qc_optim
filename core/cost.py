@@ -55,8 +55,12 @@ import copy
 
 import numpy as np
 import scipy as sp
+
 import qiskit as qk
 from qiskit import QiskitError
+# these Classes are unfortunately now DEPRECATED by qiskit
+from qiskit.aqua.operators import WeightedPauliOperator as wpo
+from qiskit.aqua.operators import TPBGroupedWeightedPauliOperator as groupedwpo
 
 import utilities as ut
 
@@ -178,7 +182,7 @@ class CostInterface(metaclass=abc.ABCMeta):
                 assert len(params_names) == len(params)
             bound_circuits = []
             for p, pn in zip(params, params_names):
-                bound_circuits += bind_params(self._meas_circuits, p, self._qk_vars, pn)
+                bound_circuits += bind_params(self.meas_circuits, p, self.qk_vars, pn)
         return bound_circuits   
 
 class GenericCost(CostInterface):
@@ -861,19 +865,118 @@ def bind_params(circ, param_values, param_variables, param_name = None):
 # Cross-fidelity class
 #======================#
 
+class CostWPO(CostInterface):
+    """
+    Cost class that internally uses the qiskit weighted product operator
+    objects. NOTE: WeightedPauliOperator is DEPRECATED in qiskit.
+    """
+    def __init__(
+        self,
+        ansatz,
+        instance,
+        weighted_pauli_operators,
+        ):
+        """
+        Parameters
+        ----------
+        ansatz : object implementing AnsatzInterface
+            The ansatz object that this cost can be optimsed over
+        instance : qiskit quantum instance
+            Will be used to generate internal transpiled circuits
+        weighted_pauli_operators : qiskit WeightedPauliOperator
+            Pauli operators whose weighted sum defines the cost
+        """
+        self.ansatz = ansatz
+        self.instance = instance
+
+        # check type of passed operators
+        if not type(weighted_pauli_operators) is wpo:
+            raise TypeError
+
+        # ensure the ansatz and qubit Hamiltonians have same number of qubits
+        assert weighted_pauli_operators.num_qubits==self.ansatz.nb_qubits
+
+        # store operators in grouped form, currently use `unsorted_grouping` method, which
+        # is a greedy method. Sorting method could be controlled with a kwarg
+        self.grouped_weighted_operators = groupedwpo.unsorted_grouping(weighted_pauli_operators)
+
+        # generate and transpile measurement circuits
+        measurement_circuits = self.grouped_weighted_operators.construct_evaluation_circuit(
+            wave_function=self.ansatz.circuit,
+            statevector_mode=self.instance.is_statevector
+            )
+        self._meas_circuits = self.instance.transpile(measurement_circuits)
+
+    def evaluate_cost_and_std(
+        self, 
+        results:qk.result.result.Result, 
+        name='',
+        ):
+        """ 
+        Evaluate the expectation value of the state produced by the 
+        ansatz against the weighted Pauli operators stored, using the
+        results from an experiment.
+
+        NOTE: this takes the statevector mode from the cost obj's quantum
+        instance attribute, which is not necessarily the instance that 
+        has produced the results. The executing instance should be the
+        same backend however, and so (hopefully) operate in the same 
+        statevector mode.
+
+        Parameters
+        ----------
+        results : qiskit results obj
+            Results to evaluate the operators against
+        name : string, optional
+            Used to resolve circuit naming
+        """
+        return self.grouped_weighted_operators.evaluate_with_result(
+            results,
+            statevector_mode=self.instance.is_statevector,
+            circuit_name_prefix=name
+            )
+
+    def evaluate_cost(
+        self, 
+        results:qk.result.result.Result, 
+        name='',
+        real_part=True,
+        ):
+        """ 
+        Evaluate the expectation value of the state produced by the 
+        ansatz against the weighted Pauli operators stored, using the
+        results from an experiment.
+
+        Parameters
+        ----------
+        results : qiskit results obj
+            Results to evaluate the operators against
+        name : string, optional
+            Used to resolve circuit naming
+        """
+        mean,std = self.evaluate_cost_and_std(
+            results=results, 
+            name=name
+            )
+        if real_part:
+            return np.real(mean)
+        else:
+            return mean
+
 class CrossFidelity(CostInterface):
     """
     Cost class to implement offline CrossFidelity measurements between 
     two quantum states (arxiv:1909.01282)
     """
-    def __init__(self,
-                 ansatz,
-                 instance,
-                 comparison_results=None,
-                 seed=0,
-                 nb_random=5,
-                 prefix='HaarRandom',
-                 ):
+    def __init__(
+        self,
+        ansatz,
+        instance,
+        comparison_results=None,
+        seed=0,
+        nb_random=5,
+        prefix='HaarRandom',
+        ):
         """
         Parameters
         ----------
@@ -940,7 +1043,6 @@ class CrossFidelity(CostInterface):
     @property
     def seed(self):
         return self._seed
-    
 
     def _gen_random_measurements(self):
         """ 
