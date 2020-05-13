@@ -12,12 +12,15 @@ __all__ = [
 
 import sys
 import pdb
+import copy
+from abc import ABC, abstractmethod
+
 import GPyOpt
 import numpy as np
-import utilities as ut
-import copy
-import cost
-from abc import ABC, abstractmethod
+
+from . import utilities as ut
+from . import cost
+
 pi = np.pi
 
 class Method(ABC):

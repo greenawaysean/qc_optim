@@ -34,9 +34,9 @@ __all__ = [
 import abc
 import sys
 import random
+
 import qiskit as qk
 import numpy as np
-
 
 class AnsatzInterface(metaclass=abc.ABCMeta):
     """Interface for a parameterised ansatz. Specifies an object that must have five

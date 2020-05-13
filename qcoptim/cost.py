@@ -67,7 +67,7 @@ from qiskit import QiskitError
 from qiskit.aqua.operators import WeightedPauliOperator as wpo
 from qiskit.aqua.operators import TPBGroupedWeightedPauliOperator as groupedwpo
 
-import utilities as ut
+from . import utilities as ut
 
 #import itertools as it
 pi =np.pi
