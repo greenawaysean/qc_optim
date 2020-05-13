@@ -401,7 +401,7 @@ def prefix_to_names(circ_list, st_to_prefix):
     """ Returns a NEW list of circs with new names appended"""
     circ_list = copy.deepcopy(circ_list)
     for ii in range(len(circ_list)):
-        circ_list[ii].name = st_to_prefix + '_' + circ_list[ii].name 
+        circ_list[ii].name = st_to_prefix + circ_list[ii].name 
     return circ_list
 
 
