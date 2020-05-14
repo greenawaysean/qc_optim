@@ -1121,7 +1121,12 @@ class CrossFidelity(CostInterface):
             })
         return results
 
-    def evaluate_cost(self,results,**kwargs):
+    def evaluate_cost(
+        self,
+        results,
+        nb_random=None,
+        **kwargs
+        ):
         """ 
         Calculates the cross-fidelity using two sets of qiskit results. 
         The variable names are chosen to match arxiv:1909.01282 as close
@@ -1132,6 +1137,10 @@ class CrossFidelity(CostInterface):
         results : Qiskit results type
             Results to calculate cross-fidelity with, against the stored
             results dictionary.
+        nb_random : int, optional
+            The number of random unitaries to use to compute the cost. 
+            This allows subsampling of the full amount of data available
+            in the results.
 
         Returns
         -------
@@ -1152,12 +1161,20 @@ class CrossFidelity(CostInterface):
         # use `get_counts` method
         comparison_results = qk.result.Result.from_dict(self.comparison_results)
 
+        # (optional) use less than the full number of random unitaries available
+        _nb_random = self._nb_random
+        if not nb_random is None:
+            assert (not nb_random>self._nb_random), ("If nb_random is explicitly"
+                +" declared in CrossFidelity.evaluate_cost it cannot be greater"
+                +" than the objects nb_random attribute.")
+            _nb_random = nb_random
+
         # iterate over the different random unitaries
         tr_rho1_rho2 = 0.
         tr_rho1squared = 0.
         tr_rho2squared = 0.
         nb_qubits = None
-        for uidx in range(self._nb_random):
+        for uidx in range(_nb_random):
 
             # try to extract matching experiment data
             try:
@@ -1184,9 +1201,9 @@ class CrossFidelity(CostInterface):
             tr_rho2squared += self.correlation_fixed_U(P_2_fixedU,P_2_fixedU)
 
         # add final normalisations
-        tr_rho1_rho2 = (2**nb_qubits)*tr_rho1_rho2/(self._nb_random)
-        tr_rho1squared = (2**nb_qubits)*tr_rho1squared/(self._nb_random)
-        tr_rho2squared = (2**nb_qubits)*tr_rho2squared/(self._nb_random)
+        tr_rho1_rho2 = (2**nb_qubits)*tr_rho1_rho2/(_nb_random)
+        tr_rho1squared = (2**nb_qubits)*tr_rho1squared/(_nb_random)
+        tr_rho2squared = (2**nb_qubits)*tr_rho2squared/(_nb_random)
 
         return tr_rho1_rho2 / max(tr_rho1squared,tr_rho2squared)
 
