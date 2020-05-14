@@ -105,7 +105,7 @@ class CostInterface(metaclass=abc.ABCMeta):
             sum_cost.ansatz = self.ansatz # allows chained operations
             sum_cost._meas_circuits = tmp_1._meas_circuits + tmp_2._meas_circuits
             sum_cost.evaluate_cost = (
-                lambda x,name=None : tmp_1.evaluate_cost(x,name=name) + tmp_2.evaluate_cost(x,name=name)
+                lambda x,**kwargs : tmp_1.evaluate_cost(x,**kwargs) + tmp_2.evaluate_cost(x,**kwargs)
                 )
             return sum_cost
 
@@ -114,7 +114,7 @@ class CostInterface(metaclass=abc.ABCMeta):
 
             sum_cost = copy.deepcopy(self) # not a deepcopy
             sum_cost.ansatz = self.ansatz # allows chained operations
-            sum_cost.evaluate_cost = (lambda x,name=None : other + self.evaluate_cost(x,name=name))
+            sum_cost.evaluate_cost = (lambda x,**kwargs : other + self.evaluate_cost(x,**kwargs))
             return sum_cost
 
     def __radd__(self,other):
@@ -127,7 +127,7 @@ class CostInterface(metaclass=abc.ABCMeta):
         """
         scaled_cost = copy.deepcopy(self)
         scaled_cost.ansatz = self.ansatz # allows chained operations
-        scaled_cost.evaluate_cost = (lambda x : scalar*self.evaluate_cost(x))
+        scaled_cost.evaluate_cost = (lambda x,**kwargs : scalar*self.evaluate_cost(x,**kwargs))
         return scaled_cost
 
     def __rmul__(self,scalar):
@@ -151,8 +151,12 @@ class CostInterface(metaclass=abc.ABCMeta):
         return self.ansatz.params
     
     @abc.abstractmethod
-    def evaluate_cost(self, results : qk.result.result.Result, 
-                      name = None):
+    def evaluate_cost(
+        self, 
+        results:qk.result.result.Result, 
+        name=None,
+        **kwargs,
+        ):
         """ Returns the result of the cost function from a qk results object, 
             optional to specify a name to give the results list
             TODO: extend to allow list of names"""
@@ -195,7 +199,8 @@ class GenericCost(CostInterface):
     def evaluate_cost(
         self, 
         results : qk.result.result.Result, 
-        name=None
+        name=None,
+        **kwargs
         ):
         pass
 
@@ -335,7 +340,7 @@ class Cost(CostInterface):
         for c in self._meas_circuits:
             c.name = self.name
     
-    def evaluate_cost(self, results_obj, name = None):
+    def evaluate_cost(self, results_obj, name=None, **kwargs):
         """ Returns cost value from a qiskit result object
         ----------
         results_obj : None, or 1d, 2d numpy array (if 1d becomes 2d from np.atleast_2d)
@@ -946,6 +951,7 @@ class CostWPO(CostInterface):
         results:qk.result.result.Result, 
         name='',
         real_part=True,
+        **kwargs,
         ):
         """ 
         Evaluate the expectation value of the state produced by the 
@@ -1115,7 +1121,7 @@ class CrossFidelity(CostInterface):
             })
         return results
 
-    def evaluate_cost(self,results):
+    def evaluate_cost(self,results,**kwargs):
         """ 
         Calculates the cross-fidelity using two sets of qiskit results. 
         The variable names are chosen to match arxiv:1909.01282 as close
