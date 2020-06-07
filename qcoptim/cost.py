@@ -105,7 +105,7 @@ class CostInterface(metaclass=abc.ABCMeta):
             sum_cost.ansatz = self.ansatz # allows chained operations
             sum_cost._meas_circuits = tmp_1._meas_circuits + tmp_2._meas_circuits
             sum_cost.evaluate_cost = (
-                lambda x,name=None : tmp_1.evaluate_cost(x,name=name) + tmp_2.evaluate_cost(x,name=name)
+                lambda x,**kwargs : tmp_1.evaluate_cost(x,**kwargs) + tmp_2.evaluate_cost(x,**kwargs)
                 )
             return sum_cost
 
@@ -114,7 +114,7 @@ class CostInterface(metaclass=abc.ABCMeta):
 
             sum_cost = copy.deepcopy(self) # not a deepcopy
             sum_cost.ansatz = self.ansatz # allows chained operations
-            sum_cost.evaluate_cost = (lambda x,name=None : other + self.evaluate_cost(x,name=name))
+            sum_cost.evaluate_cost = (lambda x,**kwargs : other + self.evaluate_cost(x,**kwargs))
             return sum_cost
 
     def __radd__(self,other):
@@ -127,7 +127,7 @@ class CostInterface(metaclass=abc.ABCMeta):
         """
         scaled_cost = copy.deepcopy(self)
         scaled_cost.ansatz = self.ansatz # allows chained operations
-        scaled_cost.evaluate_cost = (lambda x : scalar*self.evaluate_cost(x))
+        scaled_cost.evaluate_cost = (lambda x,**kwargs : scalar*self.evaluate_cost(x,**kwargs))
         return scaled_cost
 
     def __rmul__(self,scalar):
@@ -151,8 +151,12 @@ class CostInterface(metaclass=abc.ABCMeta):
         return self.ansatz.params
     
     @abc.abstractmethod
-    def evaluate_cost(self, results : qk.result.result.Result, 
-                      name = None):
+    def evaluate_cost(
+        self, 
+        results:qk.result.result.Result, 
+        name=None,
+        **kwargs,
+        ):
         """ Returns the result of the cost function from a qk results object, 
             optional to specify a name to give the results list
             TODO: extend to allow list of names"""
@@ -195,7 +199,8 @@ class GenericCost(CostInterface):
     def evaluate_cost(
         self, 
         results : qk.result.result.Result, 
-        name=None
+        name=None,
+        **kwargs
         ):
         pass
 
@@ -335,7 +340,7 @@ class Cost(CostInterface):
         for c in self._meas_circuits:
             c.name = self.name
     
-    def evaluate_cost(self, results_obj, name = None):
+    def evaluate_cost(self, results_obj, name=None, **kwargs):
         """ Returns cost value from a qiskit result object
         ----------
         results_obj : None, or 1d, 2d numpy array (if 1d becomes 2d from np.atleast_2d)
@@ -907,7 +912,7 @@ class CostWPO(CostInterface):
 
         # generate and transpile measurement circuits
         measurement_circuits = self.grouped_weighted_operators.construct_evaluation_circuit(
-            wave_function=self.ansatz.circuit,
+            wave_function=copy.deepcopy(self.ansatz.circuit),
             statevector_mode=self.instance.is_statevector
             )
         self._meas_circuits = self.instance.transpile(measurement_circuits)
@@ -946,6 +951,7 @@ class CostWPO(CostInterface):
         results:qk.result.result.Result, 
         name='',
         real_part=True,
+        **kwargs,
         ):
         """ 
         Evaluate the expectation value of the state produced by the 
@@ -1011,9 +1017,6 @@ class CrossFidelity(CostInterface):
         """
 
         # store inputs
-        self.comparison_results = comparison_results
-        if (not self.comparison_results is None) and (not type(self.comparison_results) is dict):
-            self.comparison_results = self.comparison_results.to_dict()
         self.ansatz = ansatz
         self.instance = instance
 
@@ -1027,23 +1030,8 @@ class CrossFidelity(CostInterface):
         self._meas_circuits = self._gen_random_measurements()
         self._meas_circuits = self.instance.transpile(self._meas_circuits)
 
-        # check if comparison_results contains the crossfidelity_metadata
-        # tags and if it does compare them, if these comparisons fail then
-        # crash, if the crossfidelity_metadata is missing issue a warning
-        if not comparison_results is None:
-            try:
-                comparison_metadata = comparison_results['crossfidelity_metadata']
-            except KeyError:
-                print('Warning, input results dictionary does not contain crossfidelity_metadata'
-                    +' and so we cannot confirm that the results are compatible. If the input results'
-                    +' object was collecting by this class consider using the tag_results_metadata'
-                    +' method to add the crossfidelity_metadata.',file=sys.stderr)
-
-            _err_msg = ('Input results dictionary contains data that is incompatible with the '
-                    +' arguments passed to CrossFidelity initializer.')
-            assert self._seed == comparison_metadata['seed'],_err_msg
-            assert self._nb_random == comparison_metadata['nb_random'],_err_msg
-            assert self._prefix == comparison_metadata['prefix'],_err_msg
+        # run setter (see below)
+        self.comparison_results = comparison_results
 
     @property
     def nb_random(self):
@@ -1052,6 +1040,39 @@ class CrossFidelity(CostInterface):
     @property
     def seed(self):
         return self._seed
+
+    @property
+    def comparison_results(self):
+        return self._comparison_results
+
+    @comparison_results.setter
+    def comparison_results(self, results):
+        """ 
+        setter for comparison_results, perform validations
+        """
+        if (not results is None) and (not type(results) is dict):
+            results = results.to_dict()
+
+        # check if comparison_results contains the crossfidelity_metadata
+        # tags and if it does compare them, if these comparisons fail then
+        # crash, if the crossfidelity_metadata is missing issue a warning
+        if not results is None:
+            comparison_metadata = None
+            try:
+                comparison_metadata = results['crossfidelity_metadata']
+            except KeyError:
+                print('Warning, input results dictionary does not contain crossfidelity_metadata'
+                    +' and so we cannot confirm that the results are compatible. If the input results'
+                    +' object was collecting by this class consider using the tag_results_metadata'
+                    +' method to add the crossfidelity_metadata.',file=sys.stderr)
+            if not comparison_metadata is None:
+                _err_msg = ('Input results dictionary contains data that is incompatible with the '
+                        +' this CrossFidelity object.')
+                assert self._seed == comparison_metadata['seed'],_err_msg
+                assert self._nb_random == comparison_metadata['nb_random'],_err_msg
+                assert self._prefix == comparison_metadata['prefix'],_err_msg
+
+        self._comparison_results = results
 
     def _gen_random_measurements(self):
         """ 
@@ -1115,7 +1136,13 @@ class CrossFidelity(CostInterface):
             })
         return results
 
-    def evaluate_cost(self,results):
+    def evaluate_cost(
+        self,
+        results,
+        nb_random=None,
+        name='',
+        **kwargs
+        ):
         """ 
         Calculates the cross-fidelity using two sets of qiskit results. 
         The variable names are chosen to match arxiv:1909.01282 as close
@@ -1126,6 +1153,10 @@ class CrossFidelity(CostInterface):
         results : Qiskit results type
             Results to calculate cross-fidelity with, against the stored
             results dictionary.
+        nb_random : int, optional
+            The number of random unitaries to use to compute the cost. 
+            This allows subsampling of the full amount of data available
+            in the results.
 
         Returns
         -------
@@ -1137,29 +1168,38 @@ class CrossFidelity(CostInterface):
         # comparison_results dict so that we can easily generate the 
         # comparison data using the same setup (e.g. seed, prefix). But
         # in that case cannote evaluate the cost.
-        if self.comparison_results is None:
+        if self._comparison_results is None:
             print('No comparison results set has been passed to CrossFidelity obj.',
                 file=sys.stderr)
             raise ValueError
 
         # convert comparison_results back to qiskit results obj, so we can
         # use `get_counts` method
-        comparison_results = qk.result.Result.from_dict(self.comparison_results)
+        comparison_results = qk.result.Result.from_dict(self._comparison_results)
+
+        # (optional) use less than the full number of random unitaries available
+        _nb_random = self._nb_random
+        if not nb_random is None:
+            assert (not nb_random>self._nb_random), ("If nb_random is explicitly"
+                +" declared in CrossFidelity.evaluate_cost it cannot be greater"
+                +" than the objects nb_random attribute.")
+            _nb_random = nb_random
 
         # iterate over the different random unitaries
         tr_rho1_rho2 = 0.
         tr_rho1squared = 0.
         tr_rho2squared = 0.
         nb_qubits = None
-        for uidx in range(self._nb_random):
+        for uidx in range(_nb_random):
 
             # try to extract matching experiment data
             try:
-                countsdict_1_fixedU = results.get_counts(self._prefix+str(uidx))
+                countsdict_1_fixedU = results.get_counts(name+self._prefix+str(uidx))
                 countsdict_2_fixedU = comparison_results.get_counts(self._prefix+str(uidx))
             except QiskitError:
                 print('Cannot extract matching experiment data to calculate cross-fidelity.',
                     file=sys.stderr)
+                raise
 
             # normalise counts dict to give empirical probability dists
             P_1_fixedU = { k:v/sum(countsdict_1_fixedU.values()) for k,v in countsdict_1_fixedU.items() }
@@ -1170,17 +1210,19 @@ class CrossFidelity(CostInterface):
             if nb_qubits is None:
                 # get the first dict key string and find its length
                 nb_qubits = len(list(P_1_fixedU.keys())[0])    
-            assert nb_qubits==len(list(P_1_fixedU.keys())[0])
-            assert nb_qubits==len(list(P_2_fixedU.keys())[0])
+            assert nb_qubits==len(list(P_1_fixedU.keys())[0]),('nb_qubits='+f'{nb_qubits}'
+                +', P_1_fixedU.keys()='+f'{P_1_fixedU.keys()}')
+            assert nb_qubits==len(list(P_2_fixedU.keys())[0]),('nb_qubits='+f'{nb_qubits}'
+                +', P_2_fixedU.keys()='+f'{P_2_fixedU.keys()}')
 
             tr_rho1_rho2 += self.correlation_fixed_U(P_1_fixedU,P_2_fixedU)
             tr_rho1squared += self.correlation_fixed_U(P_1_fixedU,P_1_fixedU)
             tr_rho2squared += self.correlation_fixed_U(P_2_fixedU,P_2_fixedU)
 
         # add final normalisations
-        tr_rho1_rho2 = (2**nb_qubits)*tr_rho1_rho2/(self._nb_random)
-        tr_rho1squared = (2**nb_qubits)*tr_rho1squared/(self._nb_random)
-        tr_rho2squared = (2**nb_qubits)*tr_rho2squared/(self._nb_random)
+        tr_rho1_rho2 = (2**nb_qubits)*tr_rho1_rho2/(_nb_random)
+        tr_rho1squared = (2**nb_qubits)*tr_rho1squared/(_nb_random)
+        tr_rho2squared = (2**nb_qubits)*tr_rho2squared/(_nb_random)
 
         return tr_rho1_rho2 / max(tr_rho1squared,tr_rho2squared)
 
