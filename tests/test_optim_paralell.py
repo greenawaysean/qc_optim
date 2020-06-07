@@ -6,10 +6,11 @@ Created on Fri Mar  6 16:10:36 2020
 """
 
 import sys
+import copy
 import numpy as np
 import qiskit as qk
 import matplotlib.pyplot as plt
-sys.path.insert(0, '../core/')
+sys.path.insert(0, '../qcoptim/')
 import ansatz as az
 import cost as cost
 import utilities as ut
@@ -22,26 +23,23 @@ import optimisers as op
 # Defaults
 # ===================
 pi= np.pi
-NB_SHOTS_DEFAULT = 512
+NB_SHOTS_DEFAULT = 2048
 OPTIMIZATION_LEVEL_DEFAULT = 0
 TRANSPILER_SEED_DEFAULT = 10
-NB_INIT = 80
-NB_ITER = 80
+NB_INIT = 10
+NB_ITER = 10
 CHOOSE_DEVICE = True
 
 
 # ===================
 # Choose a backend using the custom backend manager and generate an instance
 # ===================
-if False:
+if CHOOSE_DEVICE:
     bem = ut.BackendManager()
     bem.get_current_status()
     chosen_device = int(input('SELECT IBM DEVICE:'))
     bem.get_backend(chosen_device, inplace=True)
     inst = bem.gen_instance_from_current(initial_layout=[1,3,2])
-    
-backend = qk.providers.aer.QasmSimulator()
-inst = qk.aqua.QuantumInstance(backend, shots = 512)
 
 
 # ===================
@@ -73,6 +71,9 @@ bo_args = ut.gen_default_argsbo(f=lambda x: .5,
                                 nb_init=NB_INIT,
                                 eval_init=False)
 
+bo_args['nb_iter'] = NB_ITER
+
+
 spsa_args = {'a':1, 'b':0.628, 's':0.602, 
              't':0.101,'A':0,'domain':[(0, 2*np.pi) for i in range(anz0.nb_params)],
              'x_init':None}
@@ -84,43 +85,44 @@ spsa_args = {'a':1, 'b':0.628, 's':0.602,
 opt_bo = op.MethodBO
 opt_spsa = op.MethodSPSA
 
-runner1 = op.ParallelRunner(cost_list[:2], 
+bo_args_list = [copy.deepcopy(bo_args) for ii in range(5)]
+
+runner1 = op.ParallelRunner(cost_list, 
                             opt_bo, 
-                            optimizer_args = bo_args,
+                            optimizer_args = bo_args_list,
                             share_init = False,
-                            method = 'independent')
+                            method = 'shared')
 
-runner2 = op.ParallelRunner(cost_list[:2], 
-                            opt_spsa,
-                            optimizer_args = spsa_args,
-                            share_init = False,
-                            method = 'independent')
+# runner2 = op.ParallelRunner(cost_list[:2], 
+#                             opt_spsa,
+#                             optimizer_args = spsa_args,
+#                             share_init = False,
+#                             method = 'independent')
 
-runner3 = op.ParallelRunner(cost_list[:4], 
-                            [opt_bo],
-                            optimizer_args = bo_args,
-                            share_init = False,
-                            method = 'right')
+# runner3 = op.ParallelRunner(cost_list[:4], 
+#                             [opt_bo],
+#                             optimizer_args = bo_args,
+#                             share_init = False,
+#                             method = 'right')
 
 
-single_bo = op.SingleBO(cst0, bo_args)
+# single_bo = op.SingleBO(cst0, bo_args)
 
 single_SPSA = op.SingleSPSA(cst0, spsa_args)
 
-runner = runner2
+runner = runner1
 
 x_new = [[x_sol, x_sol], [x_sol]]
 
 # ========================= /
 # Testing circ generation and output formainting
 # ========================= /
-if False:
+if len(runner.optim_list) == 2:
     Batch = ut.Batch()
     runner.next_evaluation_circuits()
     print(runner.method)
     print(runner._last_x_new)
-
-if len(runner.cost_objs) == 2:
+    print('---------------------------------------------')
     runner._gen_circuits_from_params(x_new, inplace=True)
     print(runner._last_x_new)
     Batch.submit_exec_res(runner)
