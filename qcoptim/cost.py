@@ -67,7 +67,7 @@ from qiskit import QiskitError
 from qiskit.aqua.operators import WeightedPauliOperator as wpo
 from qiskit.aqua.operators import TPBGroupedWeightedPauliOperator as groupedwpo
 
-from . import utilities as ut
+import utilities as ut
 
 #import itertools as it
 pi =np.pi
@@ -555,7 +555,7 @@ class GHZPauliCost(Cost):
         weights = self._GHZ_PAULI_DECOMP[str(self.nb_qubits)][1]
         dim = self.dim
         def meas_func(counts):
-            return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
+            return 1 - (1+np.dot([expected_parity(c) for c in counts], weights))/dim
         return meas_func
 
 class GHZWitness1Cost(Cost):
