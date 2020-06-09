@@ -836,3 +836,71 @@ def get_TFIM_qubit_op(
     return qubitOp
 
 safe_string = SafeString()
+
+
+
+# ------------------------------------------------------
+# Hamiltonian related helper functions
+# ------------------------------------------------------
+
+def pauli_correlation(single_count_dict, ii, jj = None):
+    """ 
+    Returns the correlation between qubits ii and jj for the given count string
+    e.g. a passing a count dict that was measuered in the Z basis computes 
+    <Z_ii Z_jj> 
+    
+    Parameters
+    ----------
+    single_count_dict : dict
+        The count dict of a particular measurement outcome
+    ii : int
+        The first qubit
+    jj : int, None (default None)
+        The second qubit. If None, returns expectation value of single qubit ii
+    """
+    corr = 0
+    shots = 0
+    single_qubit = jj == None
+    for key in single_count_dict.keys():
+        shots += single_count_dict[key]
+        t1 = (int(key[ii]) - 0.5) * 2
+        if single_qubit:t2 = 1
+        else: t2 = (int(key[jj]) - 0.5) * 2
+        corr += t1 * t2 * single_count_dict[key]
+    return corr/shots
+
+
+def gen_random_xy_hamiltonian(nb_spins, 
+                  U = 1.0,
+                  J = 1.0,
+                  delta = 0.1,
+                  alpha = 1.0):
+    """
+    Generates a random XY Hamiltonian. Diag elements are the field strength, 
+    and off diagonal elements are the couplings rates of the XX + YY terms 
+    
+    H = U sigma_z + (J + delta) * (XX' + YY') / |r - r'|^alpha
+    
+    Parameters:
+    ------
+    nb_spins : int 
+        nb of spins in the 1D spin chain
+    U : float (default 1)
+        The Z terms in H
+    J : float (default 1)
+        Average value of the XX+YY nearest neighbour coupling terms
+    delta : float (default 0.1)
+        Fluctuations in the coupling terms (also decrease with distance)
+        Drawn from random uniform [0, delta] for now
+    alpha : float (default 1)
+        Power of the long range decay
+        
+    TODO: Different random coupling terms
+    """
+    H = np.eye(nb_spins)
+    for ii in range(nb_spins):
+        for jj in range(nb_spins):
+            if ii != jj:
+                H[ii, jj] = (J + delta*np.random.rand()) / np.abs(ii - jj)**alpha
+    return (H + H.transpose())/2
+

@@ -67,7 +67,10 @@ from qiskit import QiskitError
 from qiskit.aqua.operators import WeightedPauliOperator as wpo
 from qiskit.aqua.operators import TPBGroupedWeightedPauliOperator as groupedwpo
 
-import utilities as ut
+# 
+from qiskit.quantum_info.operators import Operator, Pauli
+
+from . import utilities as ut
 
 #import itertools as it
 pi =np.pi
@@ -450,14 +453,6 @@ class Cost(CostInterface):
             circ = self._meas_circuits
         return circ
 
-def compare_layout(circ1, circ2):
-    """ Draft, define a list of checks to compare transpiled circuits
-        not clear what the rules should be (or what would be a better name)
-        So far: compare the full layout"""
-    test = True
-    test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
-    test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
-    return test
 
 #======================#
 # Subclasses: one-qubit related costs
@@ -552,7 +547,7 @@ class GHZPauliCost(Cost):
         weights = self._GHZ_PAULI_DECOMP[str(self.nb_qubits)][1]
         dim = self.dim
         def meas_func(counts):
-            return 1 - (1+np.dot([expected_parity(c) for c in counts], weights))/dim
+            return (1+np.dot([expected_parity(c) for c in counts], weights))/dim
         return meas_func
 
 class GHZWitness1Cost(Cost):
@@ -769,6 +764,57 @@ class GraphCyclWitness3Cost(Cost):
             return np.sum(exp)  - (N-1)
         return meas_func
 
+#======================#
+# Random xy-Hamiltonian related cost
+#======================#
+class RandomXYCost(Cost):
+    """
+    Cost function for energy expectation value of the random 1D xy hamiltonian
+    
+    Custom parameters
+    -----------
+    hamiltonian : 2D np array
+        Diagonal elements are the longitudinal (z) field terms.
+        Off diagonal elements are the random couplings of the (XX + YY) terms
+    """
+    def __init__(self, ansatz, instance, hamiltonian,
+                 fix_transpile = True, # maybe redundent now
+                 keep_res = False, 
+                 verbose = True, 
+                 debug = False, 
+                 error_correction = False,
+                 name = None, **args):
+        super().__init__( ansatz, instance, 
+                         fix_transpile, # maybe redundent now
+                         keep_res, 
+                         verbose, 
+                         debug, 
+                         error_correction,
+                         name, **args)
+        assert self.nb_qubits == hamiltonian.shape[0], "Input hamiltonian must have same dims as nb_qubits (see docstring)"
+        assert hamiltonian.shape[0] == hamiltonian.shape[1], "Input Hamiltonian should be square (see docstring)"
+        self.hamiltonian = hamiltonian
+    def _gen_list_meas(self):
+        nb_qubits = self.nb_qubits
+        z = 'z'*nb_qubits
+        x = 'x'*nb_qubits
+        y = 'y'*nb_qubits
+        return [z,x,y]
+    
+    def _gen_meas_func(self):
+        def func(count_list):
+            longitudinal_field = np.diag(self.hamiltonian)
+            field_term = [longitudinal_field[ii] * ut.pauli_correlation(count_list[0], ii) for ii in range(self.nb_qubits)]
+            field_term = sum(field_term)
+            xy_term = 0
+            for ii in range(self.nb_qubits):
+                for jj in range(self.nb_qubits):
+                    if ii != jj:
+                        xy_term += self.hamiltonian[ii,jj] * ut.pauli_correlation(count_list[1], ii, jj)
+                        xy_term += self.hamiltonian[ii,jj] * ut.pauli_correlation(count_list[2], ii, jj)
+            return field_term + xy_term
+        return func
+
 # ------------------------------------------------------
 # Functions to compute expected values based on measurement outcomes counts as 
 # returned by qiskit
@@ -807,8 +853,17 @@ def get_substring(string, list_indices=None):
         return "".join([string[ind] for ind in list_indices])
 
 # ------------------------------------------------------
-# Some functions to deals with appending measurement and param bindings  
+# Some functions to deals with appending measurement, param bindings and comparisons
 # ------------------------------------------------------
+def compare_layout(circ1, circ2):
+    """ Draft, define a list of checks to compare transpiled circuits
+        not clear what the rules should be (or what would be a better name)
+        So far: compare the full layout"""
+    test = True
+    test &= (circ1._layout.get_physical_bits() == circ2._layout.get_physical_bits())
+    test &= (circ1.count_ops()['cx'] == circ2.count_ops()['cx'])
+    return test
+
 def append_measurements(circuit, measurements, logical_qubits=None):
     """ Append measurements to one circuit:
         TODO: Replace with Weighted pauli ops?"""
@@ -1374,3 +1429,18 @@ if __name__ == '__main__':
         
         assert ghz_cost.evaluate_cost(res) == 1.0, "For passing in results object, check the solutions are correct"
         assert ghz_witness2.evaluate_cost(res) == 1.0, "For passing in results object, check the solutions are correct"
+
+        
+    # Basic checks for random XY cost function (appears to be working fine)
+    h_field = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    h_xy = np.array([[0, .5, .5], [.5, 0, .5], [.5, .5, 0]])
+    ansatz = anz.AnsatzFromFunction(anz._GHZ_3qubits_6_params_cx0)
+    xy_cost = RandomXYCost(ansatz, inst, h_field)
+    circs = xy_cost.bind_params_to_meas([0,0,0,0,0,0])
+    res = inst.execute(circs)
+    assert xy_cost.evaluate_cost(res) == -3.0, "Field only Hamiltonian in logical 0 == -1 z-projection"
+    assert xy_cost([0,0,0,pi,pi,pi]) == 3.0, "Field only Hamiltonian in logical 0 == -1 z-projection"
+
+    xy_cost = RandomXYCost(ansatz, inst, h_xy)
+    assert abs(xy_cost([0,0,0,0,0,0])) < 0.08, "z = -1 state should be close to zero (this may fail very randomly)" 
+    assert abs(xy_cost([0,0,0,pi/2,pi/2,pi/2]) - 1) < 0.08, "XY product state state should be close to 1 (this may fail very randomly)" 

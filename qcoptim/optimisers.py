@@ -18,8 +18,8 @@ from abc import ABC, abstractmethod
 import GPyOpt
 import numpy as np
 
-import utilities as ut
-import cost
+from . import utilities as ut
+from . import cost
 
 pi = np.pi
 
