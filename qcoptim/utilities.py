@@ -52,6 +52,7 @@ import numpy as np
 import qiskit as qk
 import matplotlib.pyplot as plt
 
+from qiskit.quantum_info import Pauli
 # qiskit noise modules
 from qiskit.providers.aer.noise import NoiseModel
 from qiskit.providers.aer import noise
@@ -59,7 +60,7 @@ from qiskit.providers.aer.noise.errors import ReadoutError
 # qiskit chemistry objects
 from qiskit.chemistry import FermionicOperator
 from qiskit.chemistry.drivers import PySCFDriver, UnitsType
-from qiskit.aqua.operators import Z2Symmetries
+from qiskit.aqua.operators import Z2Symmetries, WeightedPauliOperator
 
 NoneType = type(None)
 pi = np.pi
@@ -831,7 +832,7 @@ def get_TFIM_qubit_op(
     # X terms
     pauli_terms += [ (-B,Pauli.from_label('I'*(i)+'X'+'I'*(N-(i+1)))) for i in range(N) ]
 
-    qubitOp = wpo(pauli_terms)
+    qubitOp = WeightedPauliOperator(pauli_terms)
 
     return qubitOp
 
