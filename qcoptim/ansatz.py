@@ -372,6 +372,53 @@ class RegularU3Ansatz(BaseAnsatz):
         return qc
 
 
+class RegularU2Ansatz(BaseAnsatz):
+    """ """
+
+    def _generate_params(self):
+        """ """
+        nb_params = self._nb_qubits*(self._depth+1)*2
+        name_params = ['R'+str(i) for i in range(nb_params)]
+        return [qk.circuit.Parameter(n) for n in name_params]
+
+    def _generate_circuit(self):
+        """ """
+
+        N = self._nb_qubits
+        barriers = True
+        
+        qc = qk.QuantumCircuit(N)
+
+        egate = qc.cx # entangle with CNOTs
+
+        param_counter = 0
+        for r in range(self._depth):
+
+            # add parameterised single qubit rotations
+            for q in range(N):
+                qc.u2(*[self._params[param_counter+i] for i in range(2)],q)
+                param_counter += 2
+
+            # add entangling gates
+            l,r = 2*np.arange(N//2),2*np.arange(N//2)+1
+            if len(l)==1:
+                egate(l[0],r[0])
+            elif len(l)>1:
+                egate(l,r)
+            l,r = 2*np.arange(N//2-1+(N%2))+1,2*np.arange(N//2-1+(N%2))+2
+            if len(l)==1:
+                egate(l[0],r[0])
+            elif len(l)>1:
+                egate(l,r)
+            if barriers:
+                qc.barrier()
+
+        # add final round of parameterised single qubit rotations
+        for q in range(N):
+            qc.u2(*[self._params[param_counter+i] for i in range(2)],q)
+            param_counter += 2
+        
+        return qc
 # ------------------------------------------------------------------------------
 def count_params_from_func(ansatz):
     """ Counts the number of parameters that the ansatz function accepts"""
