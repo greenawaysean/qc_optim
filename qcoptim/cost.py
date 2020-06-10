@@ -1127,7 +1127,7 @@ class CrossFidelity(CostInterface):
                 _err_msg = ('Input results dictionary contains data that is incompatible with the '
                         +' this CrossFidelity object.')
                 assert self._seed == comparison_metadata['seed'],_err_msg
-                assert self._nb_random == comparison_metadata['nb_random'],_err_msg
+                assert (not self._nb_random > comparison_metadata['nb_random']),_err_msg
                 assert self._prefix == comparison_metadata['prefix'],_err_msg
 
             # bug fix, need counts dict keys to be hex values
