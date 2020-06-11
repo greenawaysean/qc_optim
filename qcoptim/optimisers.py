@@ -156,8 +156,10 @@ class MethodBO(Method):
         """
         #raise Warning('Need to fix dims: can currently only update one at a time')
         if not self.evaluated_init:
-            self.optimiser.X = np.array([x_new])
-            self.optimiser.Y = np.array([[y_new]])
+            # self.optimiser.X = np.array([x_new])
+            # self.optimiser.Y = np.array([[y_new]])
+            self.optimiser.X = np.array(x_new)
+            self.optimiser.y = np.array(y_new)
         else:
             self.optimiser.X = np.vstack((self.optimiser.X, x_new))
             self.optimiser.Y = np.vstack((self.optimiser.Y, y_new))
